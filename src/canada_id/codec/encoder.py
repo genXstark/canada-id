@@ -48,7 +48,10 @@ def encode_pdf417(
     if isinstance(data, bytes):
         code = data.decode("latin-1")
     else:
-        code = data.encode("utf-8").decode("latin-1")
+        # AAMVA uses Latin-1 (ISO 8859-1). Encode directly to Latin-1
+        # to preserve accented characters like É, È, Ê as single bytes.
+        # Previous UTF-8 encoding caused mojibake (É → Ã‰).
+        code = data.encode("latin-1").decode("latin-1")
 
     if not code:
         return []
