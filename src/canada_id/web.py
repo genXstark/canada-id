@@ -69,26 +69,27 @@ def _encode_barcode(province_choice, fields_json):
     except json.JSONDecodeError as e:
         return None, f"Invalid JSON: {e}", ""
 
-    # Province mismatch guard
+    # Province mismatch guard — auto-corrects instead of blocking
+    status_msg = ""
     mismatches = check_province_match(province_code, fields)
     if mismatches:
-        warnings = []
-        for m in mismatches:
-            icon = "🚫" if m.severity == "error" else "⚠️"
-            warnings.append(f"{icon} {m.message}")
-
-        detected, _ = auto_fix_province(fields)
+        detected, reason = auto_fix_province(fields)
         if detected:
-            warnings.append(
-                f"\n💡 Auto-fix: Your data belongs to {detected}."
-                f" Switch province to '{detected}' or fix your field data."
+            province_code = detected
+            status_msg = (
+                f"AUTO-CORRECTED: You selected {_extract_code(province_choice)}"
+                f" but your data is for {detected}."
+                f" Generated with {detected} instead."
             )
-
-        return None, "\n".join(warnings), "BLOCKED — province mismatch"
+        else:
+            status_msg = "WARNING: " + "; ".join(m.message for m in mismatches)
 
     aamva_string = build_aamva(fields, province_code)
     barcode = encode_pdf417(aamva_string)
     img = barcode_to_image(barcode, scale=3)
+
+    if not status_msg:
+        status_msg = f"OK — generated for {province_code}"
 
     # Log to history
     _db.log_encode(
@@ -98,7 +99,7 @@ def _encode_barcode(province_choice, fields_json):
         barcode_img=img,
     )
 
-    return img, aamva_string, f"✅ Saved (province: {province_code})"
+    return img, aamva_string, status_msg
 
 
 def _validate_fields(province_choice, fields_json):
@@ -120,18 +121,18 @@ def _validate_fields(province_choice, fields_json):
     lines = []
     if mismatches:
         for m in mismatches:
-            icon = "🚫 MISMATCH" if m.severity == "error" else "⚠️ WARNING"
-            lines.append(f"[{icon}] {m.field}: {m.message}")
+            tag = "MISMATCH" if m.severity == "error" else "WARNING"
+            lines.append(f"[{tag}] {m.field}: {m.message}")
         lines.append("")
 
     errors = validate_aamva(fields, province_code)
     if not errors and not mismatches:
-        result = "✅ All fields valid."
+        result = "All fields valid."
     else:
         for err in errors:
             icon = "ERROR" if err.severity == "error" else "WARN"
             lines.append(f"[{icon}] {err.field}: {err.message}")
-        result = "\n".join(lines) if lines else "✅ All fields valid."
+        result = "\n".join(lines) if lines else "All fields valid."
 
     # Log validation
     error_strs = [f"{e.field}: {e.message}" for e in errors]
@@ -155,11 +156,11 @@ def _auto_detect_province(fields_json):
         try:
             profile = get_profile(detected)
             choice = f"{profile.code} - {profile.name}"
-            return gr.update(value=choice), f"✅ {reason}"
+            return gr.update(value=choice), reason
         except KeyError:
             return gr.update(), f"Unknown province code: {detected}"
 
-    return gr.update(), f"⚠️ {reason}"
+    return gr.update(), reason
 
 
 def _sample_fields():
@@ -223,7 +224,7 @@ def create_app() -> gr.Blocks:
     choices = _province_choices()
 
     with gr.Blocks(title="Canada ID - AAMVA Barcode Tool") as app:
-        gr.Markdown("# 🇨🇦 Canada ID — AAMVA PDF417 Barcode Tool")
+        gr.Markdown("# Canada ID - AAMVA PDF417 Barcode Tool")
         gr.Markdown(
             "Encode and decode AAMVA-standard PDF417 barcodes"
             " for all Canadian provinces and territories."
@@ -274,7 +275,7 @@ def create_app() -> gr.Blocks:
                         )
                         validate_btn = gr.Button("Validate")
                         autodetect_btn = gr.Button(
-                            "🔍 Auto-Detect Province",
+                            "Auto-Detect Province",
                         )
                 with gr.Column():
                     encode_output = gr.Image(label="Generated Barcode")
@@ -352,7 +353,7 @@ def create_app() -> gr.Blocks:
         total = sum(stats.values())
         if total > 0:
             gr.Markdown(
-                f"*📊 Lifetime stats: {stats.get('encode', 0)} encodes,"
+                f"*Lifetime stats: {stats.get('encode', 0)} encodes,"
                 f" {stats.get('decode', 0)} decodes,"
                 f" {stats.get('validate', 0)} validations*"
             )
