@@ -63,7 +63,9 @@ class HistoryDB:
     def __init__(self, db_path: Path | str | None = None):
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn = sqlite3.connect(
+            str(self.db_path), check_same_thread=False,
+        )
         self._conn.executescript(_SCHEMA)
 
     def log_encode(
