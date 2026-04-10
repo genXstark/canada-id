@@ -294,20 +294,32 @@ def _mrz_result_text(result) -> str:
 
 
 def _load_passport_template():
-    """Load sample Canadian Passport fields."""
-    return "P", "TD3", "SMITH", "JOHN MICHAEL", "AB1234567", \
-        "900115", "M", "280115", "CAN", ""
+    """Load sample Canadian Passport (TD3) fields."""
+    return (
+        "P", "TD3", "CAN",
+        "SMITH", "JOHN MICHAEL",
+        "AB1234567", "CAN",
+        "900115", "M", "280115",
+        "",        # optional_data_1 (personal number for TD3)
+        "",        # optional_data_2 (TD1 only)
+    )
 
 
 def _load_pr_template():
-    """Load sample Canadian PR Card fields."""
-    return "I", "TD1", "SMITH", "JOHN MICHAEL", "PD0183017", \
-        "900115", "M", "280115", "CAN", "ON"
+    """Load sample Canadian PR Card (TD1) fields."""
+    return (
+        "I", "TD1", "CAN",
+        "MAGHA MOFFO", "MATHILDE",
+        "PD0183017", "CMR",
+        "841127", "F", "260430",
+        "ON",      # optional_data_1
+        "",        # optional_data_2
+    )
 
 
 def _mrz_generate(
-    doc_type, mrz_format, surname, given_names,
-    doc_num, dob, sex, expiry, nationality, opt1,
+    doc_type, mrz_format, country, surname, given_names,
+    doc_num, nationality, dob, sex, expiry, opt1, opt2,
 ):
     """Generate MRZ from form fields."""
     from canada_id.mrz.generator import MRZData, generate_mrz
@@ -317,7 +329,7 @@ def _mrz_generate(
     try:
         data = MRZData(
             document_type=doc_type or "I",
-            country_code="CAN",
+            country_code=country or "CAN",
             surname=surname or "",
             given_names=given_names or "",
             document_number=doc_num or "",
@@ -326,6 +338,7 @@ def _mrz_generate(
             sex=sex or "M",
             expiry_date=expiry or "",
             optional_data_1=opt1 or "",
+            optional_data_2=opt2 or "",
         )
         mrz = generate_mrz(data, mrz_format or "TD1")
         lines = lines_from_mrz(mrz)
@@ -371,6 +384,50 @@ def _mrz_scan_image(image):
         return display, "", f"Extracted MRZ but validation failed: {e}"
 
 
+def _mrz_fill_from_scan(scan_parsed):
+    """Fill generate form from scanned/parsed MRZ fields."""
+    if not scan_parsed or not scan_parsed.strip():
+        return (
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            "Scan a document first.",
+        )
+
+    fields = {}
+    for line in scan_parsed.strip().split("\n"):
+        if ":" in line:
+            key, val = line.split(":", 1)
+            fields[key.strip()] = val.strip()
+
+    fmt = fields.get("Format", "TD1")
+    doc_type = fields.get("Document Type", "I")
+    country = fields.get("Country", "CAN")
+    surname = fields.get("Surname", "")
+    given = fields.get("Given Names", "")
+    doc_num = fields.get("Document Number", "")
+    nationality = fields.get("Nationality", "CAN")
+    dob = fields.get("DOB", "")
+    sex = fields.get("Sex", "M")
+    expiry = fields.get("Expiry", "")
+    opt1 = fields.get("Optional 1", "")
+    if not opt1:
+        opt1 = fields.get("Personal Number", "")
+    opt2 = fields.get("Optional 2", "")
+
+    # Map doc type character
+    if doc_type and len(doc_type) >= 1:
+        doc_type = doc_type[0]
+
+    return (
+        doc_type, fmt, country,
+        surname, given, doc_num, nationality,
+        dob, sex, expiry, opt1, opt2,
+        f"Filled from scan: {surname}, {given}",
+    )
+
+
 def _mrz_parse_text(mrz_text, ocr_correct):
     """Parse manually entered MRZ text."""
     from canada_id.mrz.parsers import MrzParseError, parse_mrz
@@ -382,7 +439,7 @@ def _mrz_parse_text(mrz_text, ocr_correct):
         result = parse_mrz(
             mrz_text.strip(),
             ocr_correct=bool(ocr_correct),
-            canada_only=True,
+            canada_only=False,
         )
         parsed = _mrz_result_text(result)
         valid = "VALID" if result.check_digits_valid else "INVALID"
@@ -622,64 +679,91 @@ def create_app() -> gr.Blocks:
         with gr.Tab("MRZ"):
             gr.Markdown("## Canadian MRZ - Passport & PR Card")
             gr.Markdown(
-                "**Generate** MRZ for Canadian passports (TD3)"
-                " and PR cards (TD1)."
-                " **Scan** a document image to extract and"
-                " validate MRZ via OCR."
-                " **Compare** scanned vs generated to verify."
+                "**Passport** = TD3 (2x44) |"
+                " **PR Card** = TD1 (3x30) |"
+                " Issuing country is always CAN."
             )
 
             # ── Section 1: Generate ──
             gr.Markdown("### 1. Generate MRZ")
             with gr.Row():
                 passport_btn = gr.Button(
-                    "Load Passport Template",
+                    "Passport Template (TD3)",
                 )
                 pr_btn = gr.Button(
-                    "Load PR Card Template",
+                    "PR Card Template (TD1)",
                 )
+                fill_btn = gr.Button(
+                    "Fill from Scan/Parse",
+                    variant="secondary",
+                )
+
             with gr.Row():
                 with gr.Column():
+                    gr.Markdown("**Document Info**")
                     mrz_doc_type = gr.Dropdown(
                         choices=["I", "P"], value="I",
-                        label="Document Type (I=ID/PR, P=Passport)",
+                        label="Document Type"
+                        " (P=Passport, I=ID/PR Card)",
                     )
                     mrz_format = gr.Dropdown(
                         choices=["TD1", "TD2", "TD3"],
-                        value="TD1", label="MRZ Format",
+                        value="TD1",
+                        label="MRZ Format"
+                        " (TD3=Passport, TD1=PR Card)",
                     )
-                    mrz_surname = gr.Textbox(
-                        label="Surname", value="SMITH",
-                    )
-                    mrz_given = gr.Textbox(
-                        label="Given Names",
-                        value="JOHN MICHAEL",
+                    mrz_country = gr.Textbox(
+                        label="Issuing Country (3-letter)",
+                        value="CAN",
                     )
                     mrz_doc_num = gr.Textbox(
-                        label="Document Number",
+                        label="Document Number"
+                        " (max 9 chars)",
                         value="PD0183017",
                     )
+
                 with gr.Column():
-                    mrz_dob = gr.Textbox(
-                        label="Date of Birth (YYMMDD)",
-                        value="900115",
+                    gr.Markdown("**Personal Info**")
+                    mrz_surname = gr.Textbox(
+                        label="Surname (family name)",
+                        value="MAGHA MOFFO",
+                    )
+                    mrz_given = gr.Textbox(
+                        label="Given Names"
+                        " (space-separated)",
+                        value="MATHILDE",
+                    )
+                    mrz_nationality = gr.Textbox(
+                        label="Nationality (3-letter)"
+                        " - can differ from issuing country",
+                        value="CMR",
                     )
                     mrz_sex = gr.Dropdown(
-                        choices=["M", "F", "X"], value="M",
+                        choices=["M", "F", "X"], value="F",
                         label="Sex",
+                    )
+
+                with gr.Column():
+                    gr.Markdown("**Dates & Optional**")
+                    mrz_dob = gr.Textbox(
+                        label="Date of Birth (YYMMDD)",
+                        value="841127",
                     )
                     mrz_expiry = gr.Textbox(
                         label="Expiry Date (YYMMDD)",
-                        value="280115",
-                    )
-                    mrz_nationality = gr.Textbox(
-                        label="Nationality (3-letter code)",
-                        value="CAN",
+                        value="260430",
                     )
                     mrz_opt1 = gr.Textbox(
-                        label="Optional Data",
+                        label="Optional Data 1"
+                        " (TD1: province | TD3: personal number)",
                         value="ON",
                     )
+                    mrz_opt2 = gr.Textbox(
+                        label="Optional Data 2"
+                        " (TD1 only)",
+                        value="",
+                    )
+
             mrz_gen_btn = gr.Button(
                 "Generate MRZ", variant="primary",
             )
@@ -694,44 +778,40 @@ def create_app() -> gr.Blocks:
                 label="Status", lines=1,
             )
 
-            # Template button wiring
+            # ── All generate fields list ──
+            _gen_fields = [
+                mrz_doc_type, mrz_format, mrz_country,
+                mrz_surname, mrz_given, mrz_doc_num,
+                mrz_nationality, mrz_dob, mrz_sex,
+                mrz_expiry, mrz_opt1, mrz_opt2,
+            ]
+
             passport_btn.click(
-                _load_passport_template, inputs=[], outputs=[
-                    mrz_doc_type, mrz_format, mrz_surname,
-                    mrz_given, mrz_doc_num, mrz_dob,
-                    mrz_sex, mrz_expiry, mrz_nationality,
-                    mrz_opt1,
-                ],
+                _load_passport_template,
+                inputs=[], outputs=_gen_fields,
             )
             pr_btn.click(
-                _load_pr_template, inputs=[], outputs=[
-                    mrz_doc_type, mrz_format, mrz_surname,
-                    mrz_given, mrz_doc_num, mrz_dob,
-                    mrz_sex, mrz_expiry, mrz_nationality,
-                    mrz_opt1,
-                ],
+                _load_pr_template,
+                inputs=[], outputs=_gen_fields,
             )
             mrz_gen_btn.click(
                 _mrz_generate,
-                inputs=[
-                    mrz_doc_type, mrz_format, mrz_surname,
-                    mrz_given, mrz_doc_num, mrz_dob,
-                    mrz_sex, mrz_expiry, mrz_nationality,
-                    mrz_opt1,
-                ],
+                inputs=_gen_fields,
                 outputs=[
                     mrz_gen_output, mrz_gen_image,
                     mrz_gen_status,
                 ],
             )
 
-            # ── Section 2: Scan ──
+            # ── Section 2: Scan from Image ──
             gr.Markdown("---")
             gr.Markdown("### 2. Scan Document")
             gr.Markdown(
                 "Upload a passport or PR card photo."
-                " The MRZ at the bottom will be extracted"
-                " via OCR and validated automatically."
+                " MRZ at the bottom is extracted via OCR"
+                " and parsed automatically."
+                " Then click **Fill from Scan/Parse** above"
+                " to copy data into the generate form."
             )
             with gr.Row():
                 with gr.Column():
@@ -747,10 +827,10 @@ def create_app() -> gr.Blocks:
                         label="Extracted MRZ", lines=4,
                     )
                     mrz_scan_parsed = gr.Textbox(
-                        label="Parsed Fields", lines=10,
+                        label="Parsed Fields", lines=12,
                     )
                     mrz_scan_status = gr.Textbox(
-                        label="Status", lines=1,
+                        label="Scan Status", lines=1,
                     )
             mrz_scan_btn.click(
                 _mrz_scan_image,
@@ -761,17 +841,22 @@ def create_app() -> gr.Blocks:
                 ],
             )
 
+            # Fill from scan wiring
+            fill_btn.click(
+                _mrz_fill_from_scan,
+                inputs=[mrz_scan_parsed],
+                outputs=_gen_fields + [mrz_gen_status],
+            )
+
             # ── Section 2b: Manual paste ──
             gr.Markdown("---")
-            gr.Markdown(
-                "### Or paste MRZ text manually"
-            )
+            gr.Markdown("### Or paste MRZ text manually")
             with gr.Row():
                 mrz_paste_input = gr.Textbox(
                     label="Paste MRZ text here",
                     lines=4,
                     placeholder=(
-                        "e.g. CACANPD01830178..."
+                        "e.g. CACANPD01830178<111..."
                     ),
                 )
                 mrz_paste_ocr = gr.Checkbox(
@@ -780,7 +865,7 @@ def create_app() -> gr.Blocks:
                 )
             mrz_paste_btn = gr.Button("Parse & Validate")
             mrz_paste_result = gr.Textbox(
-                label="Parsed Fields", lines=10,
+                label="Parsed Fields", lines=12,
             )
             mrz_paste_status = gr.Textbox(
                 label="Status", lines=1,
@@ -788,15 +873,17 @@ def create_app() -> gr.Blocks:
             mrz_paste_btn.click(
                 _mrz_parse_text,
                 inputs=[mrz_paste_input, mrz_paste_ocr],
-                outputs=[mrz_paste_result, mrz_paste_status],
+                outputs=[
+                    mrz_paste_result, mrz_paste_status,
+                ],
             )
 
             # ── Section 3: Compare ──
             gr.Markdown("---")
             gr.Markdown("### 3. Compare Generated vs Scanned")
             gr.Markdown(
-                "After generating and scanning, click Compare"
-                " to verify they match."
+                "After generating and scanning, click"
+                " Compare to verify they match."
             )
             mrz_compare_btn = gr.Button(
                 "Compare", variant="primary",
