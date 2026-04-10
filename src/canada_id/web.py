@@ -480,6 +480,15 @@ def _mrz_fill_from_scan(scan_parsed):
     if doc_type and len(doc_type) >= 1:
         doc_type = doc_type[0]
 
+    # Clean all fields — remove spaces and invalid chars
+    doc_num = _clean_mrz_field(doc_num, "doc_num")
+    country = _clean_mrz_field(country, "country")
+    nationality = _clean_mrz_field(nationality, "nationality")
+    dob = _clean_mrz_field(dob, "dob")
+    expiry = _clean_mrz_field(expiry, "expiry")
+    opt1 = _clean_mrz_field(opt1, "opt1")
+    opt2 = _clean_mrz_field(opt2, "opt2")
+
     return (
         doc_type, fmt, country,
         surname, given, doc_num, nationality,
