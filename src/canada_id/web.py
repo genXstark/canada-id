@@ -900,7 +900,8 @@ def create_app() -> gr.Blocks:
                 ],
             )
 
-            # Fill from scan wiring
+            # Fill from scan wiring — uses whichever
+            # parsed result has data (scan or paste)
             fill_btn.click(
                 _mrz_fill_from_scan,
                 inputs=[mrz_scan_parsed],
@@ -909,20 +910,38 @@ def create_app() -> gr.Blocks:
 
             # ── Section 2b: Manual paste ──
             gr.Markdown("---")
-            gr.Markdown("### Or paste MRZ text manually")
+            gr.Markdown(
+                "### Or paste MRZ text manually"
+            )
+            gr.Markdown(
+                "If OCR fails, type/paste the MRZ"
+                " lines here. Then click **Parse**"
+                " and **Fill from Paste** to load"
+                " into the generator."
+            )
             with gr.Row():
                 mrz_paste_input = gr.Textbox(
                     label="Paste MRZ text here",
                     lines=4,
                     placeholder=(
-                        "e.g. CACANPD01830178<111..."
+                        "CACANPD01830178<1110153398"
+                        "<<<5\n8411279F2604309CMR<"
+                        "210430<01<4\nMAGHA<MOFFO<<"
+                        "MATHILDE<<<<<<<<<"
                     ),
                 )
                 mrz_paste_ocr = gr.Checkbox(
                     label="Apply OCR correction",
                     value=True,
                 )
-            mrz_paste_btn = gr.Button("Parse & Validate")
+            with gr.Row():
+                mrz_paste_btn = gr.Button(
+                    "Parse & Validate",
+                    variant="primary",
+                )
+                mrz_paste_fill_btn = gr.Button(
+                    "Fill from Paste",
+                )
             mrz_paste_result = gr.Textbox(
                 label="Parsed Fields", lines=12,
             )
@@ -935,6 +954,11 @@ def create_app() -> gr.Blocks:
                 outputs=[
                     mrz_paste_result, mrz_paste_status,
                 ],
+            )
+            mrz_paste_fill_btn.click(
+                _mrz_fill_from_scan,
+                inputs=[mrz_paste_result],
+                outputs=_gen_fields + [mrz_gen_status],
             )
 
             # ── Section 3: Compare ──
