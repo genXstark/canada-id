@@ -219,6 +219,50 @@ def _get_history_table(op_filter, province_filter):
     return rows
 
 
+def _generate_code39(text):
+    """Generate a Code 39 barcode image from text."""
+    if not text or not text.strip():
+        return None, "Enter text to encode."
+
+    from canada_id.codec.code39 import code39_to_image
+
+    try:
+        img = code39_to_image(text.strip())
+        return img, f"OK — encoded '{text.strip()}' as Code 39"
+    except ValueError as e:
+        return None, f"Invalid input: {e}"
+
+
+def _composite_card(card_image, barcode_image, x_frac, y_frac,
+                    w_frac, h_frac, rotation):
+    """Composite a barcode onto a card template."""
+    if card_image is None:
+        return None, "Upload a card template image."
+    if barcode_image is None:
+        return None, "Upload or generate a barcode image first."
+
+    from canada_id.card.compositor import composite_barcode_on_card
+    from canada_id.card.layout import BarcodeRegion
+
+    card = Image.fromarray(card_image)
+    barcode = Image.fromarray(barcode_image)
+
+    region = BarcodeRegion(
+        x_frac=float(x_frac),
+        y_frac=float(y_frac),
+        w_frac=float(w_frac),
+        h_frac=float(h_frac),
+        rotation_deg=float(rotation),
+    )
+
+    result = composite_barcode_on_card(card, barcode, region)
+    status = (
+        f"OK — composited at ({x_frac}, {y_frac})"
+        f" size ({w_frac}x{h_frac}) rotation {rotation} deg"
+    )
+    return result, status
+
+
 def create_app() -> gr.Blocks:
     """Create the Gradio application."""
     choices = _province_choices()
@@ -329,6 +373,88 @@ def create_app() -> gr.Blocks:
                 _get_history_table,
                 inputs=[history_op, history_province],
                 outputs=[history_table],
+            )
+
+        with gr.Tab("Code 39"):
+            gr.Markdown(
+                "## Code 39 Barcode Generator"
+            )
+            gr.Markdown(
+                "Encode text as a Code 39 (1D) barcode."
+                " Supports A-Z, 0-9, and -.$/+% characters."
+            )
+            with gr.Row():
+                with gr.Column():
+                    c39_text = gr.Textbox(
+                        label="Text to encode",
+                        placeholder="e.g. HELLO123",
+                        value="HELLO123",
+                    )
+                    c39_btn = gr.Button(
+                        "Generate Code 39", variant="primary",
+                    )
+                with gr.Column():
+                    c39_output = gr.Image(label="Code 39 Barcode")
+                    c39_status = gr.Textbox(
+                        label="Status", lines=1,
+                    )
+            c39_btn.click(
+                _generate_code39,
+                inputs=[c39_text],
+                outputs=[c39_output, c39_status],
+            )
+
+        with gr.Tab("Compositor"):
+            gr.Markdown(
+                "## Card Compositor"
+            )
+            gr.Markdown(
+                "Overlay a barcode onto a card template."
+                " Position and size are set as fractions"
+                " of the card dimensions (0.0 to 1.0)."
+            )
+            with gr.Row():
+                with gr.Column():
+                    comp_card = gr.Image(
+                        label="Card Template (upload image)",
+                    )
+                    comp_barcode = gr.Image(
+                        label="Barcode Image (upload image)",
+                    )
+                with gr.Column():
+                    with gr.Row():
+                        comp_x = gr.Number(
+                            label="X position", value=0.02,
+                            minimum=0.0, maximum=1.0,
+                        )
+                        comp_y = gr.Number(
+                            label="Y position", value=0.05,
+                            minimum=0.0, maximum=1.0,
+                        )
+                    with gr.Row():
+                        comp_w = gr.Number(
+                            label="Width", value=0.37,
+                            minimum=0.01, maximum=1.0,
+                        )
+                        comp_h = gr.Number(
+                            label="Height", value=0.90,
+                            minimum=0.01, maximum=1.0,
+                        )
+                    comp_rot = gr.Number(
+                        label="Rotation (degrees)", value=-90.0,
+                    )
+                    comp_btn = gr.Button(
+                        "Composite", variant="primary",
+                    )
+            comp_result = gr.Image(label="Result")
+            comp_status = gr.Textbox(label="Status", lines=1)
+            comp_btn.click(
+                _composite_card,
+                inputs=[
+                    comp_card, comp_barcode,
+                    comp_x, comp_y, comp_w, comp_h, comp_rot,
+                ],
+                outputs=[comp_result, comp_status],
             )
 
         with gr.Tab("Provinces"):
