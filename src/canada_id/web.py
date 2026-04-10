@@ -408,40 +408,23 @@ def _mrz_generate(
         return "", None, f"Error: {e}"
 
 
-def _mrz_scan_image(image, crop_top, crop_bottom):
+def _mrz_scan_image(image):
     """Extract MRZ from uploaded document image via OCR."""
     if image is None:
-        return None, "", "", (
-            "Upload a passport or PR card image."
-        )
+        return "", "", "Upload a passport or PR card image."
 
     from canada_id.mrz.ocr_reader import extract_mrz_from_image
     from canada_id.mrz.parsers import MrzParseError, parse_mrz
     from canada_id.mrz.utils import lines_from_mrz
 
     pil_image = Image.fromarray(image)
-
-    # Apply crop if user adjusted sliders
-    top_pct = float(crop_top or 0) / 100.0
-    bot_pct = float(crop_bottom or 100) / 100.0
-    if top_pct > 0 or bot_pct < 1.0:
-        w, h = pil_image.size
-        y1 = int(h * top_pct)
-        y2 = int(h * bot_pct)
-        if y2 > y1 + 10:
-            pil_image = pil_image.crop((0, y1, w, y2))
-
-    # Show the cropped preview
-    import numpy as np
-    crop_preview = np.array(pil_image)
-
     mrz_text = extract_mrz_from_image(pil_image)
 
     if not mrz_text:
-        return crop_preview, "", "", (
-            "Could not extract MRZ. Try adjusting"
-            " the crop sliders to isolate the MRZ zone"
-            " (the 2-3 lines of <<< text at the bottom)."
+        return "", "", (
+            "Could not extract MRZ from image."
+            " Try a clearer photo or paste the MRZ"
+            " text manually below."
         )
 
     lines = lines_from_mrz(mrz_text)
@@ -454,16 +437,11 @@ def _mrz_scan_image(image, crop_top, crop_bottom):
         parsed = _mrz_result_text(result)
         valid = "VALID" if result.check_digits_valid else "INVALID"
         status = f"Extracted and parsed. Check digits: {valid}"
-        return crop_preview, display, parsed, status
+        return display, parsed, status
     except MrzParseError as e:
-        return crop_preview, display, "", (
-            f"Extracted MRZ but parse failed: {e}"
-            f" - Try adjusting crop sliders."
-        )
+        return display, "", f"Extracted MRZ but parse failed: {e}"
     except ValueError as e:
-        return crop_preview, display, "", (
-            f"Extracted but validation failed: {e}"
-        )
+        return display, "", f"Extracted but validation failed: {e}"
 
 
 def _mrz_fill_from_scan(scan_parsed):
@@ -890,39 +868,18 @@ def create_app() -> gr.Blocks:
             gr.Markdown("### 2. Scan Document")
             gr.Markdown(
                 "Upload a passport or PR card photo."
-                " Use the **crop sliders** to isolate"
-                " just the MRZ zone (the 2-3 lines of"
-                " `<<<` text at the bottom of the"
-                " document). Then click Extract."
+                " MRZ is extracted automatically."
+                " If OCR fails, paste the MRZ text"
+                " manually below."
             )
             with gr.Row():
                 with gr.Column():
                     mrz_scan_img = gr.Image(
                         label="Upload Document Image",
                     )
-                    gr.Markdown("**Crop (% of image)**")
-                    with gr.Row():
-                        mrz_crop_top = gr.Slider(
-                            minimum=0, maximum=95,
-                            value=60, step=5,
-                            label="Crop from top %"
-                            " (slide right to cut"
-                            " more from top)",
-                        )
-                        mrz_crop_bottom = gr.Slider(
-                            minimum=5, maximum=100,
-                            value=100, step=5,
-                            label="Crop from bottom %"
-                            " (slide left to cut"
-                            " from bottom)",
-                        )
                     mrz_scan_btn = gr.Button(
                         "Extract MRZ from Image",
                         variant="primary",
-                    )
-                    mrz_crop_preview = gr.Image(
-                        label="Cropped Preview"
-                        " (this is what OCR sees)",
                     )
                 with gr.Column():
                     mrz_scan_text = gr.Textbox(
@@ -932,17 +889,14 @@ def create_app() -> gr.Blocks:
                         label="Parsed Fields", lines=12,
                     )
                     mrz_scan_status = gr.Textbox(
-                        label="Scan Status", lines=2,
+                        label="Scan Status", lines=1,
                     )
             mrz_scan_btn.click(
                 _mrz_scan_image,
-                inputs=[
-                    mrz_scan_img, mrz_crop_top,
-                    mrz_crop_bottom,
-                ],
+                inputs=[mrz_scan_img],
                 outputs=[
-                    mrz_crop_preview, mrz_scan_text,
-                    mrz_scan_parsed, mrz_scan_status,
+                    mrz_scan_text, mrz_scan_parsed,
+                    mrz_scan_status,
                 ],
             )
 
