@@ -236,25 +236,40 @@ def mrz(fields_path: str | None, mrz_format: str, output: str | None):
 
 @main.command()
 @click.argument("mrz_text")
-def parse_mrz_cmd(mrz_text: str):
-    """Parse and validate an MRZ string."""
-    from canada_id.mrz.parser import parse_mrz
+@click.option(
+    "--ocr-correct/--no-ocr-correct",
+    default=False,
+    help="Apply OCR error correction.",
+)
+def parse_mrz_cmd(mrz_text: str, ocr_correct: bool):
+    """Parse and validate an MRZ string (Canada-only)."""
+    from canada_id.mrz.parsers import MrzParseError, parse_mrz
 
     mrz_text = mrz_text.replace("\\n", "\n")
-    result = parse_mrz(mrz_text)
+    try:
+        result = parse_mrz(
+            mrz_text, ocr_correct=ocr_correct, canada_only=True,
+        )
+    except (MrzParseError, ValueError) as e:
+        click.echo(f"Parse error: {e}", err=True)
+        sys.exit(1)
 
-    click.echo(f"Format: {result.format_type}")
-    click.echo(f"Valid: {result.valid}")
+    click.echo(f"Format: {result.format.value}")
+    click.echo(f"Check digits valid: {result.check_digits_valid}")
     click.echo(f"Document Type: {result.document_type}")
-    click.echo(f"Country: {result.country_code}")
+    click.echo(f"Country: {result.issuing_country}")
     click.echo(f"Name: {result.surname}, {result.given_names}")
     click.echo(f"Doc Number: {result.document_number}")
+    click.echo(f"Nationality: {result.nationality}")
     click.echo(f"DOB: {result.date_of_birth}")
-    click.echo(f"Sex: {result.sex}")
+    click.echo(f"Sex: {result.sex.value}")
     click.echo(f"Expiry: {result.expiry_date}")
-    if result.errors:
-        for err in result.errors:
-            click.echo(f"  [ERROR] {err}")
+    if result.optional_data_1:
+        click.echo(f"Optional 1: {result.optional_data_1}")
+    if result.optional_data_2:
+        click.echo(f"Optional 2: {result.optional_data_2}")
+    if result.personal_number:
+        click.echo(f"Personal Number: {result.personal_number}")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ from canada_id.codec.encoder import barcode_to_image, encode_pdf417
 from canada_id.guards import auto_fix_province, check_province_match, detect_province
 from canada_id.mrz.aamva_bridge import aamva_to_mrz_data
 from canada_id.mrz.generator import generate_mrz
-from canada_id.mrz.parser import parse_mrz
+from canada_id.mrz.parsers import parse_mrz
 from canada_id.provinces.registry import all_profiles
 from canada_id.storage import HistoryDB
 
