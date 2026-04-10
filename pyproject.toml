@@ -1,0 +1,35 @@
+[project]
+name = "canada-id"
+version = "0.1.0"
+description = "Unified Canadian AAMVA PDF417 barcode encoder, decoder, and card compositor"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "Pillow>=10.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+web = ["gradio>=4"]
+dev = ["pytest>=7", "ruff>=0.4", "coverage>=7"]
+
+[project.scripts]
+canada-id = "canada_id.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

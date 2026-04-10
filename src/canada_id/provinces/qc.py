@@ -1,0 +1,58 @@
+"""Quebec province profile."""
+
+from canada_id.provinces.base import (
+    CAN_AAMVA_VERSION,
+    CAN_CARD_HEIGHT,
+    CAN_CARD_WIDTH,
+    CAN_COUNTRY,
+    CAN_DATE_FORMAT,
+    CAN_HEIGHT_UNIT,
+    CAN_OPTIONAL_FIELDS,
+    CAN_POSTAL_PATTERN,
+    CAN_REQUIRED_FIELDS,
+    ProvinceProfile,
+)
+
+PROFILE = ProvinceProfile(
+    code="QC",
+    name="Quebec",
+    iin="604428",
+    country=CAN_COUNTRY,
+    aamva_version=CAN_AAMVA_VERSION,
+    date_format=CAN_DATE_FORMAT,
+    height_unit=CAN_HEIGHT_UNIT,
+    postal_code_pattern=CAN_POSTAL_PATTERN,
+    required_fields=CAN_REQUIRED_FIELDS,
+    optional_fields=CAN_OPTIONAL_FIELDS,
+    vehicle_classes={
+        "1": "Heavy vehicle combination (tractor-trailer)",
+        "2": "Heavy straight truck over 4,500 kg",
+        "3": "Regular bus (more than 24 passengers)",
+        "4A": "Emergency vehicle",
+        "4B": "Minibus",
+        "4C": "Taxi",
+        "5": "Passenger vehicle, light truck",
+        "6A": "Motorcycle (any displacement)",
+        "6B": "Motorcycle (400 cc or less)",
+        "6C": "Moped",
+        "6D": "Three-wheeled motorcycle",
+        "6E": "Limited-speed motorcycle",
+        "8": "Farm tractor",
+    },
+    restriction_codes={
+        "A": "Corrective lenses",
+        "B": "Mechanical aids",
+        "C": "Daylight driving only",
+        "D": "Speed limited",
+        "E": "Automatic transmission",
+        "F": "Outside mirrors",
+        "I": "Interlock device",
+    },
+    endorsement_codes={
+        "S": "School bus",
+        "A": "Air brakes",
+    },
+    card_width_mm=CAN_CARD_WIDTH,
+    card_height_mm=CAN_CARD_HEIGHT,
+    jurisdiction_version=4,
+)
