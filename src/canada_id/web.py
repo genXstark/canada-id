@@ -317,30 +317,89 @@ def _load_pr_template():
     )
 
 
+def _clean_mrz_field(value: str, field_name: str) -> str:
+    """Strip spaces and invalid chars from an MRZ input field."""
+    if not value:
+        return ""
+    cleaned = value.strip().replace(" ", "")
+    # Remove any non-MRZ characters
+    import re
+    cleaned = re.sub(r"[^A-Za-z0-9<]", "", cleaned)
+    return cleaned.upper()
+
+
 def _mrz_generate(
     doc_type, mrz_format, country, surname, given_names,
     doc_num, nationality, dob, sex, expiry, opt1, opt2,
 ):
-    """Generate MRZ from form fields."""
+    """Generate MRZ from form fields with input validation."""
     from canada_id.mrz.generator import MRZData, generate_mrz
     from canada_id.mrz.renderer import render_mrz_image
     from canada_id.mrz.utils import lines_from_mrz
 
+    # Clean all fields — strip spaces, invalid chars
+    doc_type = (doc_type or "I").strip()
+    mrz_format = (mrz_format or "TD1").strip()
+    country = _clean_mrz_field(country, "Country")
+    surname_clean = (surname or "").strip()
+    given_clean = (given_names or "").strip()
+    doc_num = _clean_mrz_field(doc_num, "Document Number")
+    nationality = _clean_mrz_field(nationality, "Nationality")
+    dob = _clean_mrz_field(dob, "Date of Birth")
+    sex = (sex or "M").strip()
+    expiry = _clean_mrz_field(expiry, "Expiry Date")
+    opt1 = _clean_mrz_field(opt1, "Optional Data 1")
+    opt2 = _clean_mrz_field(opt2, "Optional Data 2")
+
+    # Validate with clear field-level errors
+    errors = []
+    if not surname_clean:
+        errors.append("Surname is required")
+    if not doc_num:
+        errors.append("Document Number is required")
+    if len(doc_num) > 9:
+        errors.append(
+            f"Document Number too long: '{doc_num}'"
+            f" ({len(doc_num)} chars, max 9)"
+        )
+    if not country or len(country) != 3:
+        errors.append(
+            f"Issuing Country must be 3 letters,"
+            f" got '{country}'"
+        )
+    if not nationality or len(nationality) != 3:
+        errors.append(
+            f"Nationality must be 3 letters,"
+            f" got '{nationality}'"
+        )
+    if dob and len(dob) != 6:
+        errors.append(
+            f"Date of Birth must be YYMMDD (6 digits),"
+            f" got '{dob}' ({len(dob)} chars)"
+        )
+    if expiry and len(expiry) != 6:
+        errors.append(
+            f"Expiry Date must be YYMMDD (6 digits),"
+            f" got '{expiry}' ({len(expiry)} chars)"
+        )
+    if errors:
+        return "", None, "FIELD ERRORS:\n" + "\n".join(errors)
+
     try:
         data = MRZData(
-            document_type=doc_type or "I",
-            country_code=country or "CAN",
-            surname=surname or "",
-            given_names=given_names or "",
-            document_number=doc_num or "",
-            nationality=nationality or "CAN",
-            date_of_birth=dob or "",
-            sex=sex or "M",
-            expiry_date=expiry or "",
-            optional_data_1=opt1 or "",
-            optional_data_2=opt2 or "",
+            document_type=doc_type,
+            country_code=country,
+            surname=surname_clean,
+            given_names=given_clean,
+            document_number=doc_num,
+            nationality=nationality,
+            date_of_birth=dob,
+            sex=sex,
+            expiry_date=expiry,
+            optional_data_1=opt1,
+            optional_data_2=opt2,
         )
-        mrz = generate_mrz(data, mrz_format or "TD1")
+        mrz = generate_mrz(data, mrz_format)
         lines = lines_from_mrz(mrz)
         display = "\n".join(lines)
         img = render_mrz_image(display, scale=3)
@@ -349,22 +408,40 @@ def _mrz_generate(
         return "", None, f"Error: {e}"
 
 
-def _mrz_scan_image(image):
+def _mrz_scan_image(image, crop_top, crop_bottom):
     """Extract MRZ from uploaded document image via OCR."""
     if image is None:
-        return "", "", "Upload a passport or PR card image."
+        return None, "", "", (
+            "Upload a passport or PR card image."
+        )
 
     from canada_id.mrz.ocr_reader import extract_mrz_from_image
     from canada_id.mrz.parsers import MrzParseError, parse_mrz
     from canada_id.mrz.utils import lines_from_mrz
 
     pil_image = Image.fromarray(image)
+
+    # Apply crop if user adjusted sliders
+    top_pct = float(crop_top or 0) / 100.0
+    bot_pct = float(crop_bottom or 100) / 100.0
+    if top_pct > 0 or bot_pct < 1.0:
+        w, h = pil_image.size
+        y1 = int(h * top_pct)
+        y2 = int(h * bot_pct)
+        if y2 > y1 + 10:
+            pil_image = pil_image.crop((0, y1, w, y2))
+
+    # Show the cropped preview
+    import numpy as np
+    crop_preview = np.array(pil_image)
+
     mrz_text = extract_mrz_from_image(pil_image)
 
     if not mrz_text:
-        return "", "", (
-            "Could not extract MRZ from image."
-            " Try a clearer photo with the MRZ zone visible."
+        return crop_preview, "", "", (
+            "Could not extract MRZ. Try adjusting"
+            " the crop sliders to isolate the MRZ zone"
+            " (the 2-3 lines of <<< text at the bottom)."
         )
 
     lines = lines_from_mrz(mrz_text)
@@ -377,11 +454,16 @@ def _mrz_scan_image(image):
         parsed = _mrz_result_text(result)
         valid = "VALID" if result.check_digits_valid else "INVALID"
         status = f"Extracted and parsed. Check digits: {valid}"
-        return display, parsed, status
+        return crop_preview, display, parsed, status
     except MrzParseError as e:
-        return display, "", f"Extracted MRZ but parse failed: {e}"
+        return crop_preview, display, "", (
+            f"Extracted MRZ but parse failed: {e}"
+            f" - Try adjusting crop sliders."
+        )
     except ValueError as e:
-        return display, "", f"Extracted MRZ but validation failed: {e}"
+        return crop_preview, display, "", (
+            f"Extracted but validation failed: {e}"
+        )
 
 
 def _mrz_fill_from_scan(scan_parsed):
@@ -808,19 +890,39 @@ def create_app() -> gr.Blocks:
             gr.Markdown("### 2. Scan Document")
             gr.Markdown(
                 "Upload a passport or PR card photo."
-                " MRZ at the bottom is extracted via OCR"
-                " and parsed automatically."
-                " Then click **Fill from Scan/Parse** above"
-                " to copy data into the generate form."
+                " Use the **crop sliders** to isolate"
+                " just the MRZ zone (the 2-3 lines of"
+                " `<<<` text at the bottom of the"
+                " document). Then click Extract."
             )
             with gr.Row():
                 with gr.Column():
                     mrz_scan_img = gr.Image(
                         label="Upload Document Image",
                     )
+                    gr.Markdown("**Crop (% of image)**")
+                    with gr.Row():
+                        mrz_crop_top = gr.Slider(
+                            minimum=0, maximum=95,
+                            value=60, step=5,
+                            label="Crop from top %"
+                            " (slide right to cut"
+                            " more from top)",
+                        )
+                        mrz_crop_bottom = gr.Slider(
+                            minimum=5, maximum=100,
+                            value=100, step=5,
+                            label="Crop from bottom %"
+                            " (slide left to cut"
+                            " from bottom)",
+                        )
                     mrz_scan_btn = gr.Button(
                         "Extract MRZ from Image",
                         variant="primary",
+                    )
+                    mrz_crop_preview = gr.Image(
+                        label="Cropped Preview"
+                        " (this is what OCR sees)",
                     )
                 with gr.Column():
                     mrz_scan_text = gr.Textbox(
@@ -830,14 +932,17 @@ def create_app() -> gr.Blocks:
                         label="Parsed Fields", lines=12,
                     )
                     mrz_scan_status = gr.Textbox(
-                        label="Scan Status", lines=1,
+                        label="Scan Status", lines=2,
                     )
             mrz_scan_btn.click(
                 _mrz_scan_image,
-                inputs=[mrz_scan_img],
+                inputs=[
+                    mrz_scan_img, mrz_crop_top,
+                    mrz_crop_bottom,
+                ],
                 outputs=[
-                    mrz_scan_text, mrz_scan_parsed,
-                    mrz_scan_status,
+                    mrz_crop_preview, mrz_scan_text,
+                    mrz_scan_parsed, mrz_scan_status,
                 ],
             )
 
