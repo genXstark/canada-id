@@ -1,4 +1,5 @@
 """Composite barcodes onto card template images."""
+
 from PIL import Image
 
 from canada_id.card.layout import BarcodeRegion

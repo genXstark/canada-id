@@ -11,9 +11,7 @@ from canada_id.aamva.header import AAMVAHeader, SubfileEntry, build_header
 from canada_id.provinces.registry import get_profile
 
 
-def _build_subfile_body(
-    fields: dict[str, str], designator: str
-) -> str:
+def _build_subfile_body(fields: dict[str, str], designator: str) -> str:
     """Build the DL/ID subfile body lines in standard order.
 
     Args:

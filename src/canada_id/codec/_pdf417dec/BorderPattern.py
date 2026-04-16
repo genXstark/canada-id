@@ -1,11 +1,10 @@
 import math
 
-from canada_id.codec._pdf417dec.BorderSymbol import BorderSymbol
 
 class BorderPattern:
     @property
     def center_x(self) -> int:
-        """  """
+        """ """
         return self._center_x
 
     @center_x.setter
@@ -14,7 +13,7 @@ class BorderPattern:
 
     @property
     def center_y(self) -> int:
-        """  """
+        """ """
         return self._center_y
 
     @center_y.setter
@@ -23,7 +22,7 @@ class BorderPattern:
 
     @property
     def delta_x(self) -> int:
-        """  """
+        """ """
         return self._delta_x
 
     @delta_x.setter
@@ -32,7 +31,7 @@ class BorderPattern:
 
     @property
     def delta_y(self) -> int:
-        """  """
+        """ """
         return self._delta_y
 
     @delta_y.setter
@@ -41,7 +40,7 @@ class BorderPattern:
 
     @property
     def border_length(self) -> float:
-        """ Border line length """
+        """Border line length"""
         return self._border_length
 
     @border_length.setter
@@ -50,7 +49,7 @@ class BorderPattern:
 
     @property
     def average_symbol_width(self) -> float:
-        """ Barcode average pattern width """
+        """Barcode average pattern width"""
         return self._average_symbol_width
 
     @average_symbol_width.setter
@@ -86,10 +85,8 @@ class BorderPattern:
             self.center_y = int(self.center_y / symbol_count)
 
             for symbol in symbol_list:
-                float_delta_x += (symbol.x1 - self.center_x) * \
-                    (symbol.y1 - self.center_y)
-                float_delta_y += (symbol.y1 - self.center_y) * \
-                    (symbol.y1 - self.center_y)
+                float_delta_x += (symbol.x1 - self.center_x) * (symbol.y1 - self.center_y)
+                float_delta_y += (symbol.y1 - self.center_y) * (symbol.y1 - self.center_y)
         else:
             for symbol in symbol_list:
                 self.center_x += symbol.x2
@@ -101,14 +98,13 @@ class BorderPattern:
 
             # slope of x as func of y
             for symbol in symbol_list:
-                float_delta_x += (symbol.x2 - self.center_x) * \
-                    (symbol.y1 - self.center_y)
-                float_delta_y += (symbol.y1 - self.center_y) * \
-                    (symbol.y1 - self.center_y)
+                float_delta_x += (symbol.x2 - self.center_x) * (symbol.y1 - self.center_y)
+                float_delta_y += (symbol.y1 - self.center_y) * (symbol.y1 - self.center_y)
 
         # border line length
         self.border_length = math.sqrt(
-            (float_delta_x * float_delta_x) + (float_delta_y * float_delta_y))
+            (float_delta_x * float_delta_x) + (float_delta_y * float_delta_y)
+        )
 
         # calculate barcode angle of rotation relative to the image
         cos_rot = float_delta_y / self.border_length
@@ -124,13 +120,13 @@ class BorderPattern:
         # if the barcode is not parallel to the image coordinates
         center_adj = 0.5 * sin_rot * hor_width
 
-        if (stop_pattern):
+        if stop_pattern:
             self.center_x += self.round_away_from_zero(center_adj * sin_rot)
             self.center_y += self.round_away_from_zero(center_adj * cos_rot)
         else:
             self.center_x -= self.round_away_from_zero(center_adj * sin_rot)
             self.center_y -= self.round_away_from_zero(center_adj * cos_rot)
-            
+
         self.delta_y = 1000
         self.delta_x = int((self.delta_y * float_delta_x) / float_delta_y)
 

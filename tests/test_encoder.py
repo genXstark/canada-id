@@ -1,5 +1,4 @@
 """Tests for PDF417 encoder."""
-import pytest
 
 from canada_id.codec.encoder import (
     barcode_to_image,
@@ -24,10 +23,7 @@ def test_encode_returns_2d_array():
 
 def test_encode_aamva_string():
     """Encoding an AAMVA-like string succeeds."""
-    aamva = (
-        "@\nANSI 636012090001DL00310242DL\n"
-        "DCSSMITH\nDACJOHN\nDAQ12345\n"
-    )
+    aamva = "@\nANSI 636012090001DL00310242DL\nDCSSMITH\nDACJOHN\nDAQ12345\n"
     barcode = encode_pdf417(aamva)
     assert len(barcode) > 0
 

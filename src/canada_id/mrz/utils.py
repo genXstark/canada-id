@@ -2,11 +2,11 @@
 
 Ported from MRZParser-develop.
 """
+
 from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Optional
 
 _INVALID_CHARS = re.compile(r"[^A-Z0-9<]")
 
@@ -51,8 +51,9 @@ def encode_name(surname: str, given_names: str, length: int) -> str:
 
 
 def parse_mrz_date(
-    yymmdd: str, is_birth: bool = True,
-) -> Optional[date]:
+    yymmdd: str,
+    is_birth: bool = True,
+) -> date | None:
     """Convert YYMMDD string to date object.
 
     For birth dates, years > current 2-digit year assume 1900s.
@@ -85,9 +86,7 @@ def lines_from_mrz(text: str) -> list[str]:
     """Split an MRZ string into lines (handles newlines or continuous)."""
     text = text.strip()
     if "\n" in text:
-        return [
-            line.strip() for line in text.split("\n") if line.strip()
-        ]
+        return [line.strip() for line in text.split("\n") if line.strip()]
 
     n = len(text)
     if n == 90:

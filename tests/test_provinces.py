@@ -1,14 +1,25 @@
 """Tests for province profiles."""
+
 import re
 
 import pytest
 
 from canada_id.provinces.registry import all_profiles, get_profile, get_profile_by_iin
 
-
 EXPECTED_CODES = {
-    "AB", "BC", "MB", "NB", "NL", "NT", "NS", "NU",
-    "ON", "PE", "QC", "SK", "YT",
+    "AB",
+    "BC",
+    "MB",
+    "NB",
+    "NL",
+    "NT",
+    "NS",
+    "NU",
+    "ON",
+    "PE",
+    "QC",
+    "SK",
+    "YT",
 }
 
 

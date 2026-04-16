@@ -1,4 +1,5 @@
 """Public API for PDF417 barcode decoding."""
+
 from PIL import Image
 
 from canada_id.codec._pdf417dec.Decoder import PDF417Decoder

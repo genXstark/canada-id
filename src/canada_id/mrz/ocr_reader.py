@@ -3,6 +3,7 @@
 Uses Tesseract via pytesseract with multi-strategy preprocessing.
 Handles both clean rendered images and real-world photos.
 """
+
 from __future__ import annotations
 
 import re
@@ -12,9 +13,7 @@ import numpy as np
 import pytesseract
 from PIL import Image
 
-pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 _MRZ_CHARS = re.compile(r"[^A-Z0-9<]")
 _MRZ_LINE_LOOSE = re.compile(r"[A-Z0-9<]{25,}")
@@ -33,13 +32,11 @@ def _clean_line(line: str) -> str:
 
 
 def _ocr_extract_lines(
-    binary: np.ndarray, psm: int = 6,
+    binary: np.ndarray,
+    psm: int = 6,
 ) -> list[str]:
     """Run OCR and return cleaned MRZ-candidate lines."""
-    config = (
-        f"--psm {psm} -c tessedit_char_whitelist="
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
-    )
+    config = f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
     raw = pytesseract.image_to_string(binary, config=config)
     lines = []
     for line in raw.split("\n"):
@@ -50,7 +47,8 @@ def _ocr_extract_lines(
 
 
 def _ocr_no_whitelist(
-    binary: np.ndarray, psm: int = 6,
+    binary: np.ndarray,
+    psm: int = 6,
 ) -> list[str]:
     """Run OCR without char whitelist, then clean.
 
@@ -70,7 +68,9 @@ def _ocr_no_whitelist(
 def _threshold_otsu(gray: np.ndarray) -> np.ndarray:
     """Otsu threshold."""
     _, binary = cv2.threshold(
-        gray, 0, 255,
+        gray,
+        0,
+        255,
         cv2.THRESH_BINARY + cv2.THRESH_OTSU,
     )
     return _ensure_dark_on_light(binary)
@@ -79,8 +79,12 @@ def _threshold_otsu(gray: np.ndarray) -> np.ndarray:
 def _threshold_adaptive(gray: np.ndarray) -> np.ndarray:
     """Adaptive Gaussian threshold."""
     binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 31, 10,
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        10,
     )
     return _ensure_dark_on_light(binary)
 
@@ -88,11 +92,14 @@ def _threshold_adaptive(gray: np.ndarray) -> np.ndarray:
 def _threshold_clahe(gray: np.ndarray) -> np.ndarray:
     """CLAHE enhanced + Otsu."""
     clahe = cv2.createCLAHE(
-        clipLimit=3.0, tileGridSize=(8, 8),
+        clipLimit=3.0,
+        tileGridSize=(8, 8),
     )
     enhanced = clahe.apply(gray)
     _, binary = cv2.threshold(
-        enhanced, 0, 255,
+        enhanced,
+        0,
+        255,
         cv2.THRESH_BINARY + cv2.THRESH_OTSU,
     )
     return _ensure_dark_on_light(binary)
@@ -111,7 +118,10 @@ def _scale_up(gray: np.ndarray, min_width: int = 1200) -> np.ndarray:
     if gray.shape[1] < min_width:
         scale = min_width / gray.shape[1]
         gray = cv2.resize(
-            gray, None, fx=scale, fy=scale,
+            gray,
+            None,
+            fx=scale,
+            fy=scale,
             interpolation=cv2.INTER_CUBIC,
         )
     return gray
@@ -121,29 +131,42 @@ def _find_mrz_region(gray: np.ndarray) -> np.ndarray | None:
     """Find MRZ region via morphological detection."""
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     kernel_bh = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (13, 5),
+        cv2.MORPH_RECT,
+        (13, 5),
     )
     blackhat = cv2.morphologyEx(
-        blurred, cv2.MORPH_BLACKHAT, kernel_bh,
+        blurred,
+        cv2.MORPH_BLACKHAT,
+        kernel_bh,
     )
     _, thresh = cv2.threshold(
-        blackhat, 0, 255,
+        blackhat,
+        0,
+        255,
         cv2.THRESH_BINARY + cv2.THRESH_OTSU,
     )
     kernel_close = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (21, 3),
+        cv2.MORPH_RECT,
+        (21, 3),
     )
     closed = cv2.morphologyEx(
-        thresh, cv2.MORPH_CLOSE, kernel_close,
+        thresh,
+        cv2.MORPH_CLOSE,
+        kernel_close,
     )
     kernel_v = cv2.getStructuringElement(
-        cv2.MORPH_RECT, (1, 9),
+        cv2.MORPH_RECT,
+        (1, 9),
     )
     closed = cv2.morphologyEx(
-        closed, cv2.MORPH_CLOSE, kernel_v,
+        closed,
+        cv2.MORPH_CLOSE,
+        kernel_v,
     )
     contours, _ = cv2.findContours(
-        closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+        closed,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE,
     )
     if not contours:
         return None
@@ -191,15 +214,18 @@ def _score_lines(lines: list[str]) -> float:
             score += 3.0
             break
 
-    lengths = [len(l) for l in lines]
-    if len(lines) == 2 and all(42 <= l <= 46 for l in lengths):
-        score += 4.0
-    elif len(lines) == 2 and all(34 <= l <= 38 for l in lengths):
-        score += 4.0
-    elif len(lines) == 3 and all(28 <= l <= 32 for l in lengths):
+    lengths = [len(line) for line in lines]
+    if (
+        len(lines) == 2
+        and all(42 <= line <= 46 for line in lengths)
+        or len(lines) == 2
+        and all(34 <= line <= 38 for line in lengths)
+        or len(lines) == 3
+        and all(28 <= line <= 32 for line in lengths)
+    ):
         score += 4.0
 
-    total_chevrons = sum(l.count("<") for l in lines)
+    total_chevrons = sum(line.count("<") for line in lines)
     if total_chevrons > 10:
         score += 2.0
 
@@ -222,9 +248,9 @@ def _try_all_strategies(gray: np.ndarray) -> list[tuple]:
         ("no_whitelist", _ocr_no_whitelist),
     ]
 
-    for tname, tfunc in thresholds:
+    for _tname, tfunc in thresholds:
         binary = tfunc(scaled)
-        for oname, ofunc in ocr_funcs:
+        for _oname, ofunc in ocr_funcs:
             for psm in psm_modes:
                 lines = ofunc(binary, psm=psm)
                 if lines:
@@ -241,10 +267,7 @@ def extract_mrz_from_image(
 
     Tries multiple strategies and picks the best result.
     """
-    if isinstance(image, Image.Image):
-        img_array = np.array(image.convert("RGB"))
-    else:
-        img_array = image
+    img_array = np.array(image.convert("RGB")) if isinstance(image, Image.Image) else image
 
     if len(img_array.shape) == 2:
         img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
@@ -263,7 +286,7 @@ def extract_mrz_from_image(
 
     # Strategy 3: Bottom crops
     for pct in (0.15, 0.25, 0.35, 0.50):
-        crop = gray[int(h * (1 - pct)):, :]
+        crop = gray[int(h * (1 - pct)) :, :]
         candidates.extend(_try_all_strategies(crop))
 
     if not candidates:
@@ -283,24 +306,24 @@ def _assemble_mrz(lines: list[str]) -> str | None:
     if len(lines) < 2:
         return None
 
-    good = [l for l in lines if len(l) >= 25]
+    good = [line for line in lines if len(line) >= 25]
     if len(good) < 2:
         return None
 
     # TD1: 3x30 — keep original order
-    td1 = [l for l in good if 28 <= len(l) <= 32]
+    td1 = [line for line in good if 28 <= len(line) <= 32]
     if len(td1) >= 3:
-        return "".join(_pad(l, 30) for l in td1[:3])
+        return "".join(_pad(line, 30) for line in td1[:3])
 
     # TD3: 2x44 — keep original order
-    td3 = [l for l in good if 42 <= len(l) <= 46]
+    td3 = [line for line in good if 42 <= len(line) <= 46]
     if len(td3) >= 2:
-        return "".join(_pad(l, 44) for l in td3[:2])
+        return "".join(_pad(line, 44) for line in td3[:2])
 
     # TD2: 2x36 — keep original order
-    td2 = [l for l in good if 34 <= len(l) <= 38]
+    td2 = [line for line in good if 34 <= len(line) <= 38]
     if len(td2) >= 2:
-        return "".join(_pad(l, 36) for l in td2[:2])
+        return "".join(_pad(line, 36) for line in td2[:2])
 
     # Fallback: concatenate in order
     combined = "".join(good)
@@ -309,9 +332,9 @@ def _assemble_mrz(lines: list[str]) -> str | None:
 
     # Last resort: take first 2-3 lines in order
     if len(good) >= 3:
-        return "".join(_pad(l, 30) for l in good[:3])
+        return "".join(_pad(line, 30) for line in good[:3])
     if len(good) >= 2:
-        return "".join(_pad(l, 44) for l in good[:2])
+        return "".join(_pad(line, 44) for line in good[:2])
 
     return None
 

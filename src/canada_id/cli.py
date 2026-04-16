@@ -1,4 +1,5 @@
 """CLI interface for canada-id barcode operations."""
+
 import json
 import sys
 
@@ -160,15 +161,18 @@ def composite(
     with open(fields_path) as f:
         fields = json.load(f)
 
-    profile = get_profile(province.upper())
+    get_profile(province.upper())
     aamva_string = build_aamva(fields, province.upper())
     barcode = encode_pdf417(aamva_string)
     barcode_img = barcode_to_image(barcode, scale=3)
 
     card_img = Image.open(template_path)
     region = BarcodeRegion(
-        x_frac=0.02, y_frac=0.05, w_frac=0.37,
-        h_frac=0.90, rotation_deg=-90.0,
+        x_frac=0.02,
+        y_frac=0.05,
+        w_frac=0.37,
+        h_frac=0.90,
+        rotation_deg=-90.0,
     )
 
     result = composite_barcode_on_card(card_img, barcode_img, region)
@@ -190,9 +194,7 @@ def provinces(province: str | None):
         if province:
             click.echo(f"  Date format: {p.date_format}")
             click.echo(f"  Height unit: {p.height_unit}")
-            classes = ", ".join(
-                f"{k}={v}" for k, v in p.vehicle_classes.items()
-            )
+            classes = ", ".join(f"{k}={v}" for k, v in p.vehicle_classes.items())
             click.echo(f"  Vehicle classes: {classes}")
 
 
@@ -248,7 +250,9 @@ def parse_mrz_cmd(mrz_text: str, ocr_correct: bool):
     mrz_text = mrz_text.replace("\\n", "\n")
     try:
         result = parse_mrz(
-            mrz_text, ocr_correct=ocr_correct, canada_only=True,
+            mrz_text,
+            ocr_correct=ocr_correct,
+            canada_only=True,
         )
     except (MrzParseError, ValueError) as e:
         click.echo(f"Parse error: {e}", err=True)

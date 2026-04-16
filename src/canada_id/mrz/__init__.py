@@ -2,6 +2,7 @@
 
 Canada-only: supports TD1, TD2, TD3 formats.
 """
+
 from canada_id.mrz.checksum import compute, compute_str, verify
 from canada_id.mrz.generator import MRZData, generate_mrz
 from canada_id.mrz.models import MrzFormat, MrzResult, Sex

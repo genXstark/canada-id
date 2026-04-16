@@ -1,4 +1,5 @@
 """Gradio web UI for canada-id barcode encoding and decoding."""
+
 import json
 
 import gradio as gr
@@ -207,14 +208,16 @@ def _get_history_table(op_filter, province_filter):
             dl = r.fields.get("DAQ", "")
             fields_preview = f"{name} | {dl}" if name else dl
 
-        rows.append([
-            r.id,
-            r.created_at_iso,
-            r.op_type.upper(),
-            r.province or "—",
-            fields_preview,
-            "Yes" if r.errors else "No",
-        ])
+        rows.append(
+            [
+                r.id,
+                r.created_at_iso,
+                r.op_type.upper(),
+                r.province or "—",
+                fields_preview,
+                "Yes" if r.errors else "No",
+            ]
+        )
 
     return rows
 
@@ -233,8 +236,7 @@ def _generate_code39(text):
         return None, f"Invalid input: {e}"
 
 
-def _composite_card(card_image, barcode_image, x_frac, y_frac,
-                    w_frac, h_frac, rotation):
+def _composite_card(card_image, barcode_image, x_frac, y_frac, w_frac, h_frac, rotation):
     """Composite a barcode onto a card template."""
     if card_image is None:
         return None, "Upload a card template image."
@@ -257,8 +259,7 @@ def _composite_card(card_image, barcode_image, x_frac, y_frac,
 
     result = composite_barcode_on_card(card, barcode, region)
     status = (
-        f"OK — composited at ({x_frac}, {y_frac})"
-        f" size ({w_frac}x{h_frac}) rotation {rotation} deg"
+        f"OK — composited at ({x_frac}, {y_frac}) size ({w_frac}x{h_frac}) rotation {rotation} deg"
     )
     return result, status
 
@@ -287,33 +288,43 @@ def _mrz_result_text(result) -> str:
     if result.birth_date:
         lines.append(f"Birth Date: {result.birth_date.isoformat()}")
     if result.expiry_date_parsed:
-        lines.append(
-            f"Expiry Date: {result.expiry_date_parsed.isoformat()}"
-        )
+        lines.append(f"Expiry Date: {result.expiry_date_parsed.isoformat()}")
     return "\n".join(lines)
 
 
 def _load_passport_template():
     """Load sample Canadian Passport (TD3) fields."""
     return (
-        "P", "TD3", "CAN",
-        "SMITH", "JOHN MICHAEL",
-        "AB1234567", "CAN",
-        "900115", "M", "280115",
-        "",        # optional_data_1 (personal number for TD3)
-        "",        # optional_data_2 (TD1 only)
+        "P",
+        "TD3",
+        "CAN",
+        "SMITH",
+        "JOHN MICHAEL",
+        "AB1234567",
+        "CAN",
+        "900115",
+        "M",
+        "280115",
+        "",  # optional_data_1 (personal number for TD3)
+        "",  # optional_data_2 (TD1 only)
     )
 
 
 def _load_pr_template():
     """Load sample Canadian PR Card (TD1) fields."""
     return (
-        "I", "TD1", "CAN",
-        "MAGHA MOFFO", "MATHILDE",
-        "PD0183017", "CMR",
-        "841127", "F", "260430",
-        "ON",      # optional_data_1
-        "",        # optional_data_2
+        "I",
+        "TD1",
+        "CAN",
+        "MAGHA MOFFO",
+        "MATHILDE",
+        "PD0183017",
+        "CMR",
+        "841127",
+        "F",
+        "260430",
+        "ON",  # optional_data_1
+        "",  # optional_data_2
     )
 
 
@@ -324,13 +335,24 @@ def _clean_mrz_field(value: str, field_name: str) -> str:
     cleaned = value.strip().replace(" ", "")
     # Remove any non-MRZ characters
     import re
+
     cleaned = re.sub(r"[^A-Za-z0-9<]", "", cleaned)
     return cleaned.upper()
 
 
 def _mrz_generate(
-    doc_type, mrz_format, country, surname, given_names,
-    doc_num, nationality, dob, sex, expiry, opt1, opt2,
+    doc_type,
+    mrz_format,
+    country,
+    surname,
+    given_names,
+    doc_num,
+    nationality,
+    dob,
+    sex,
+    expiry,
+    opt1,
+    opt2,
 ):
     """Generate MRZ from form fields with input validation."""
     from canada_id.mrz.generator import MRZData, generate_mrz
@@ -358,29 +380,16 @@ def _mrz_generate(
     if not doc_num:
         errors.append("Document Number is required")
     if len(doc_num) > 9:
-        errors.append(
-            f"Document Number too long: '{doc_num}'"
-            f" ({len(doc_num)} chars, max 9)"
-        )
+        errors.append(f"Document Number too long: '{doc_num}' ({len(doc_num)} chars, max 9)")
     if not country or len(country) != 3:
-        errors.append(
-            f"Issuing Country must be 3 letters,"
-            f" got '{country}'"
-        )
+        errors.append(f"Issuing Country must be 3 letters, got '{country}'")
     if not nationality or len(nationality) != 3:
-        errors.append(
-            f"Nationality must be 3 letters,"
-            f" got '{nationality}'"
-        )
+        errors.append(f"Nationality must be 3 letters, got '{nationality}'")
     if dob and len(dob) != 6:
-        errors.append(
-            f"Date of Birth must be YYMMDD (6 digits),"
-            f" got '{dob}' ({len(dob)} chars)"
-        )
+        errors.append(f"Date of Birth must be YYMMDD (6 digits), got '{dob}' ({len(dob)} chars)")
     if expiry and len(expiry) != 6:
         errors.append(
-            f"Expiry Date must be YYMMDD (6 digits),"
-            f" got '{expiry}' ({len(expiry)} chars)"
+            f"Expiry Date must be YYMMDD (6 digits), got '{expiry}' ({len(expiry)} chars)"
         )
     if errors:
         return "", None, "FIELD ERRORS:\n" + "\n".join(errors)
@@ -421,10 +430,14 @@ def _mrz_scan_image(image):
     mrz_text = extract_mrz_from_image(pil_image)
 
     if not mrz_text:
-        return "", "", (
-            "Could not extract MRZ from image."
-            " Try a clearer photo or paste the MRZ"
-            " text manually below."
+        return (
+            "",
+            "",
+            (
+                "Could not extract MRZ from image."
+                " Try a clearer photo or paste the MRZ"
+                " text manually below."
+            ),
         )
 
     lines = lines_from_mrz(mrz_text)
@@ -432,7 +445,9 @@ def _mrz_scan_image(image):
 
     try:
         result = parse_mrz(
-            mrz_text, ocr_correct=True, canada_only=False,
+            mrz_text,
+            ocr_correct=True,
+            canada_only=False,
         )
         parsed = _mrz_result_text(result)
         valid = "VALID" if result.check_digits_valid else "INVALID"
@@ -448,10 +463,18 @@ def _mrz_fill_from_scan(scan_parsed):
     """Fill generate form from scanned/parsed MRZ fields."""
     if not scan_parsed or not scan_parsed.strip():
         return (
-            gr.update(), gr.update(), gr.update(),
-            gr.update(), gr.update(), gr.update(),
-            gr.update(), gr.update(), gr.update(),
-            gr.update(), gr.update(), gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(),
             "Scan a document first.",
         )
 
@@ -490,9 +513,18 @@ def _mrz_fill_from_scan(scan_parsed):
     opt2 = _clean_mrz_field(opt2, "opt2")
 
     return (
-        doc_type, fmt, country,
-        surname, given, doc_num, nationality,
-        dob, sex, expiry, opt1, opt2,
+        doc_type,
+        fmt,
+        country,
+        surname,
+        given,
+        doc_num,
+        nationality,
+        dob,
+        sex,
+        expiry,
+        opt1,
+        opt2,
         f"Filled from scan: {surname}, {given}",
     )
 
@@ -532,16 +564,13 @@ def _mrz_compare(generated_mrz, scanned_mrz):
 
     lines = ["MISMATCH - Differences found:", ""]
     if len(gen) != len(scan):
-        lines.append(
-            f"Length: generated={len(gen)}, scanned={len(scan)}"
-        )
+        lines.append(f"Length: generated={len(gen)}, scanned={len(scan)}")
 
     min_len = min(len(gen), len(scan))
     diffs = []
     for i in range(min_len):
         if gen[i] != scan[i]:
-            diffs.append(f"  Position {i}: generated='{gen[i]}'"
-                         f" scanned='{scan[i]}'")
+            diffs.append(f"  Position {i}: generated='{gen[i]}' scanned='{scan[i]}'")
     if diffs:
         lines.append(f"Character differences ({len(diffs)}):")
         lines.extend(diffs[:20])
@@ -569,13 +598,16 @@ def create_app() -> gr.Blocks:
                 decode_input = gr.Image(label="Barcode Image")
                 with gr.Column():
                     decode_fields = gr.Textbox(
-                        label="Parsed Fields", lines=15,
+                        label="Parsed Fields",
+                        lines=15,
                     )
                     decode_raw = gr.Textbox(
-                        label="Raw AAMVA String", lines=5,
+                        label="Raw AAMVA String",
+                        lines=5,
                     )
                     decode_province = gr.Textbox(
-                        label="Detected Province", lines=1,
+                        label="Detected Province",
+                        lines=1,
                     )
             decode_btn = gr.Button("Decode", variant="primary")
             decode_btn.click(
@@ -603,7 +635,8 @@ def create_app() -> gr.Blocks:
                     )
                     with gr.Row():
                         encode_btn = gr.Button(
-                            "Generate Barcode", variant="primary",
+                            "Generate Barcode",
+                            variant="primary",
                         )
                         validate_btn = gr.Button("Validate")
                         autodetect_btn = gr.Button(
@@ -612,13 +645,16 @@ def create_app() -> gr.Blocks:
                 with gr.Column():
                     encode_output = gr.Image(label="Generated Barcode")
                     encode_aamva = gr.Textbox(
-                        label="AAMVA String", lines=5,
+                        label="AAMVA String",
+                        lines=5,
                     )
                     encode_status = gr.Textbox(
-                        label="Status", lines=2,
+                        label="Status",
+                        lines=2,
                     )
                     validate_output = gr.Textbox(
-                        label="Validation Result", lines=5,
+                        label="Validation Result",
+                        lines=5,
                     )
             encode_btn.click(
                 _encode_barcode,
@@ -652,8 +688,12 @@ def create_app() -> gr.Blocks:
                 history_btn = gr.Button("Refresh", variant="primary")
             history_table = gr.Dataframe(
                 headers=[
-                    "ID", "Timestamp", "Type",
-                    "Province", "Summary", "Errors?",
+                    "ID",
+                    "Timestamp",
+                    "Type",
+                    "Province",
+                    "Summary",
+                    "Errors?",
                 ],
                 label="Recent Operations",
             )
@@ -664,12 +704,9 @@ def create_app() -> gr.Blocks:
             )
 
         with gr.Tab("Code 39"):
+            gr.Markdown("## Code 39 Barcode Generator")
             gr.Markdown(
-                "## Code 39 Barcode Generator"
-            )
-            gr.Markdown(
-                "Encode text as a Code 39 (1D) barcode."
-                " Supports A-Z, 0-9, and -.$/+% characters."
+                "Encode text as a Code 39 (1D) barcode. Supports A-Z, 0-9, and -.$/+% characters."
             )
             with gr.Row():
                 with gr.Column():
@@ -679,12 +716,14 @@ def create_app() -> gr.Blocks:
                         value="HELLO123",
                     )
                     c39_btn = gr.Button(
-                        "Generate Code 39", variant="primary",
+                        "Generate Code 39",
+                        variant="primary",
                     )
                 with gr.Column():
                     c39_output = gr.Image(label="Code 39 Barcode")
                     c39_status = gr.Textbox(
-                        label="Status", lines=1,
+                        label="Status",
+                        lines=1,
                     )
             c39_btn.click(
                 _generate_code39,
@@ -693,9 +732,7 @@ def create_app() -> gr.Blocks:
             )
 
         with gr.Tab("Compositor"):
-            gr.Markdown(
-                "## Card Compositor"
-            )
+            gr.Markdown("## Card Compositor")
             gr.Markdown(
                 "Overlay a barcode onto a card template."
                 " Position and size are set as fractions"
@@ -712,35 +749,50 @@ def create_app() -> gr.Blocks:
                 with gr.Column():
                     with gr.Row():
                         comp_x = gr.Number(
-                            label="X position", value=0.02,
-                            minimum=0.0, maximum=1.0,
+                            label="X position",
+                            value=0.02,
+                            minimum=0.0,
+                            maximum=1.0,
                         )
                         comp_y = gr.Number(
-                            label="Y position", value=0.05,
-                            minimum=0.0, maximum=1.0,
+                            label="Y position",
+                            value=0.05,
+                            minimum=0.0,
+                            maximum=1.0,
                         )
                     with gr.Row():
                         comp_w = gr.Number(
-                            label="Width", value=0.37,
-                            minimum=0.01, maximum=1.0,
+                            label="Width",
+                            value=0.37,
+                            minimum=0.01,
+                            maximum=1.0,
                         )
                         comp_h = gr.Number(
-                            label="Height", value=0.90,
-                            minimum=0.01, maximum=1.0,
+                            label="Height",
+                            value=0.90,
+                            minimum=0.01,
+                            maximum=1.0,
                         )
                     comp_rot = gr.Number(
-                        label="Rotation (degrees)", value=-90.0,
+                        label="Rotation (degrees)",
+                        value=-90.0,
                     )
                     comp_btn = gr.Button(
-                        "Composite", variant="primary",
+                        "Composite",
+                        variant="primary",
                     )
             comp_result = gr.Image(label="Result")
             comp_status = gr.Textbox(label="Status", lines=1)
             comp_btn.click(
                 _composite_card,
                 inputs=[
-                    comp_card, comp_barcode,
-                    comp_x, comp_y, comp_w, comp_h, comp_rot,
+                    comp_card,
+                    comp_barcode,
+                    comp_x,
+                    comp_y,
+                    comp_w,
+                    comp_h,
+                    comp_rot,
                 ],
                 outputs=[comp_result, comp_status],
             )
@@ -771,23 +823,21 @@ def create_app() -> gr.Blocks:
                 with gr.Column():
                     gr.Markdown("**Document Info**")
                     mrz_doc_type = gr.Dropdown(
-                        choices=["I", "P"], value="I",
-                        label="Document Type"
-                        " (P=Passport, I=ID/PR Card)",
+                        choices=["I", "P"],
+                        value="I",
+                        label="Document Type (P=Passport, I=ID/PR Card)",
                     )
                     mrz_format = gr.Dropdown(
                         choices=["TD1", "TD2", "TD3"],
                         value="TD1",
-                        label="MRZ Format"
-                        " (TD3=Passport, TD1=PR Card)",
+                        label="MRZ Format (TD3=Passport, TD1=PR Card)",
                     )
                     mrz_country = gr.Textbox(
                         label="Issuing Country (3-letter)",
                         value="CAN",
                     )
                     mrz_doc_num = gr.Textbox(
-                        label="Document Number"
-                        " (max 9 chars)",
+                        label="Document Number (max 9 chars)",
                         value="PD0183017",
                     )
 
@@ -798,17 +848,16 @@ def create_app() -> gr.Blocks:
                         value="MAGHA MOFFO",
                     )
                     mrz_given = gr.Textbox(
-                        label="Given Names"
-                        " (space-separated)",
+                        label="Given Names (space-separated)",
                         value="MATHILDE",
                     )
                     mrz_nationality = gr.Textbox(
-                        label="Nationality (3-letter)"
-                        " - can differ from issuing country",
+                        label="Nationality (3-letter) - can differ from issuing country",
                         value="CMR",
                     )
                     mrz_sex = gr.Dropdown(
-                        choices=["M", "F", "X"], value="F",
+                        choices=["M", "F", "X"],
+                        value="F",
                         label="Sex",
                     )
 
@@ -823,51 +872,63 @@ def create_app() -> gr.Blocks:
                         value="260430",
                     )
                     mrz_opt1 = gr.Textbox(
-                        label="Optional Data 1"
-                        " (TD1: province | TD3: personal number)",
+                        label="Optional Data 1 (TD1: province | TD3: personal number)",
                         value="ON",
                     )
                     mrz_opt2 = gr.Textbox(
-                        label="Optional Data 2"
-                        " (TD1 only)",
+                        label="Optional Data 2 (TD1 only)",
                         value="",
                     )
 
             mrz_gen_btn = gr.Button(
-                "Generate MRZ", variant="primary",
+                "Generate MRZ",
+                variant="primary",
             )
             with gr.Row():
                 mrz_gen_output = gr.Textbox(
-                    label="Generated MRZ", lines=4,
+                    label="Generated MRZ",
+                    lines=4,
                 )
                 mrz_gen_image = gr.Image(
                     label="MRZ Image",
                 )
             mrz_gen_status = gr.Textbox(
-                label="Status", lines=1,
+                label="Status",
+                lines=1,
             )
 
             # ── All generate fields list ──
             _gen_fields = [
-                mrz_doc_type, mrz_format, mrz_country,
-                mrz_surname, mrz_given, mrz_doc_num,
-                mrz_nationality, mrz_dob, mrz_sex,
-                mrz_expiry, mrz_opt1, mrz_opt2,
+                mrz_doc_type,
+                mrz_format,
+                mrz_country,
+                mrz_surname,
+                mrz_given,
+                mrz_doc_num,
+                mrz_nationality,
+                mrz_dob,
+                mrz_sex,
+                mrz_expiry,
+                mrz_opt1,
+                mrz_opt2,
             ]
 
             passport_btn.click(
                 _load_passport_template,
-                inputs=[], outputs=_gen_fields,
+                inputs=[],
+                outputs=_gen_fields,
             )
             pr_btn.click(
                 _load_pr_template,
-                inputs=[], outputs=_gen_fields,
+                inputs=[],
+                outputs=_gen_fields,
             )
             mrz_gen_btn.click(
                 _mrz_generate,
                 inputs=_gen_fields,
                 outputs=[
-                    mrz_gen_output, mrz_gen_image,
+                    mrz_gen_output,
+                    mrz_gen_image,
                     mrz_gen_status,
                 ],
             )
@@ -892,19 +953,23 @@ def create_app() -> gr.Blocks:
                     )
                 with gr.Column():
                     mrz_scan_text = gr.Textbox(
-                        label="Extracted MRZ", lines=4,
+                        label="Extracted MRZ",
+                        lines=4,
                     )
                     mrz_scan_parsed = gr.Textbox(
-                        label="Parsed Fields", lines=12,
+                        label="Parsed Fields",
+                        lines=12,
                     )
                     mrz_scan_status = gr.Textbox(
-                        label="Scan Status", lines=1,
+                        label="Scan Status",
+                        lines=1,
                     )
             mrz_scan_btn.click(
                 _mrz_scan_image,
                 inputs=[mrz_scan_img],
                 outputs=[
-                    mrz_scan_text, mrz_scan_parsed,
+                    mrz_scan_text,
+                    mrz_scan_parsed,
                     mrz_scan_status,
                 ],
             )
@@ -919,9 +984,7 @@ def create_app() -> gr.Blocks:
 
             # ── Section 2b: Manual paste ──
             gr.Markdown("---")
-            gr.Markdown(
-                "### Or paste MRZ text manually"
-            )
+            gr.Markdown("### Or paste MRZ text manually")
             gr.Markdown(
                 "If OCR fails, type/paste the MRZ"
                 " lines here. Then click **Parse**"
@@ -952,16 +1015,19 @@ def create_app() -> gr.Blocks:
                     "Fill from Paste",
                 )
             mrz_paste_result = gr.Textbox(
-                label="Parsed Fields", lines=12,
+                label="Parsed Fields",
+                lines=12,
             )
             mrz_paste_status = gr.Textbox(
-                label="Status", lines=1,
+                label="Status",
+                lines=1,
             )
             mrz_paste_btn.click(
                 _mrz_parse_text,
                 inputs=[mrz_paste_input, mrz_paste_ocr],
                 outputs=[
-                    mrz_paste_result, mrz_paste_status,
+                    mrz_paste_result,
+                    mrz_paste_status,
                 ],
             )
             mrz_paste_fill_btn.click(
@@ -973,15 +1039,14 @@ def create_app() -> gr.Blocks:
             # ── Section 3: Compare ──
             gr.Markdown("---")
             gr.Markdown("### 3. Compare Generated vs Scanned")
-            gr.Markdown(
-                "After generating and scanning, click"
-                " Compare to verify they match."
-            )
+            gr.Markdown("After generating and scanning, click Compare to verify they match.")
             mrz_compare_btn = gr.Button(
-                "Compare", variant="primary",
+                "Compare",
+                variant="primary",
             )
             mrz_compare_result = gr.Textbox(
-                label="Comparison Result", lines=5,
+                label="Comparison Result",
+                lines=5,
             )
             mrz_compare_btn.click(
                 _mrz_compare,
@@ -994,15 +1059,23 @@ def create_app() -> gr.Blocks:
             rows = []
             for p in all_profiles():
                 classes = ", ".join(p.vehicle_classes.keys())
-                rows.append([
-                    p.code, p.name, p.iin,
-                    f"v{p.aamva_version}", classes,
-                ])
+                rows.append(
+                    [
+                        p.code,
+                        p.name,
+                        p.iin,
+                        f"v{p.aamva_version}",
+                        classes,
+                    ]
+                )
             gr.Dataframe(
                 value=rows,
                 headers=[
-                    "Code", "Name", "IIN",
-                    "AAMVA Version", "Vehicle Classes",
+                    "Code",
+                    "Name",
+                    "IIN",
+                    "AAMVA Version",
+                    "Vehicle Classes",
                 ],
             )
 

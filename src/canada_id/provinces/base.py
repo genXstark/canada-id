@@ -60,15 +60,45 @@ CAN_CARD_HEIGHT = 54.0
 CAN_AAMVA_VERSION = 9
 
 # Minimum required fields for all Canadian DLs.
-CAN_REQUIRED_FIELDS = frozenset({
-    "DCS", "DAC", "DAQ", "DBB", "DBA", "DBD",
-    "DBC", "DAU", "DAG", "DAI", "DAJ", "DAK",
-    "DCG", "DCF",
-})
+CAN_REQUIRED_FIELDS = frozenset(
+    {
+        "DCS",
+        "DAC",
+        "DAQ",
+        "DBB",
+        "DBA",
+        "DBD",
+        "DBC",
+        "DAU",
+        "DAG",
+        "DAI",
+        "DAJ",
+        "DAK",
+        "DCG",
+        "DCF",
+    }
+)
 
 # Common optional fields.
-CAN_OPTIONAL_FIELDS = frozenset({
-    "DAD", "DCU", "DAH", "DAY", "DAZ", "DAW",
-    "DCA", "DCB", "DCD", "DDE", "DDF", "DDG",
-    "DDB", "DDA", "DDD", "DDK", "DDL", "DCL",
-})
+CAN_OPTIONAL_FIELDS = frozenset(
+    {
+        "DAD",
+        "DCU",
+        "DAH",
+        "DAY",
+        "DAZ",
+        "DAW",
+        "DCA",
+        "DCB",
+        "DCD",
+        "DDE",
+        "DDF",
+        "DDG",
+        "DDB",
+        "DDA",
+        "DDD",
+        "DDK",
+        "DDL",
+        "DCL",
+    }
+)

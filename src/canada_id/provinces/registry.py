@@ -31,7 +31,19 @@ def _load() -> None:
     from canada_id.provinces.yt import PROFILE as YT
 
     for profile in [
-        AB, BC, MB, NB, NL, NS, NT, NU, ON, PE, QC, SK, YT,
+        AB,
+        BC,
+        MB,
+        NB,
+        NL,
+        NS,
+        NT,
+        NU,
+        ON,
+        PE,
+        QC,
+        SK,
+        YT,
     ]:
         _BY_CODE[profile.code] = profile
         _BY_IIN[profile.iin] = profile

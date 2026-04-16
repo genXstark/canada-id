@@ -37,9 +37,7 @@ def _check_required(
     for eid in required:
         if eid not in fields or not fields[eid].strip():
             name = FIELD_REGISTRY[eid].name if eid in FIELD_REGISTRY else eid
-            errors.append(ValidationError(
-                eid, f"Required field missing: {name}", "error"
-            ))
+            errors.append(ValidationError(eid, f"Required field missing: {name}", "error"))
 
 
 def _check_date_format(
@@ -54,46 +52,35 @@ def _check_date_format(
         if not val:
             continue
         if not pattern.match(val):
-            errors.append(ValidationError(
-                eid, f"Date must be CCYYMMDD, got: {val!r}", "error"
-            ))
+            errors.append(ValidationError(eid, f"Date must be CCYYMMDD, got: {val!r}", "error"))
             continue
         month = int(val[4:6])
         day = int(val[6:8])
         if month < 1 or month > 12:
-            errors.append(ValidationError(
-                eid, f"Invalid month {month} in date {val}", "error"
-            ))
+            errors.append(ValidationError(eid, f"Invalid month {month} in date {val}", "error"))
         if day < 1 or day > 31:
-            errors.append(ValidationError(
-                eid, f"Invalid day {day} in date {val}", "error"
-            ))
+            errors.append(ValidationError(eid, f"Invalid day {day} in date {val}", "error"))
 
 
-def _check_lengths(
-    fields: dict[str, str], errors: list[ValidationError]
-) -> None:
+def _check_lengths(fields: dict[str, str], errors: list[ValidationError]) -> None:
     """Check that field values do not exceed max_length."""
     for eid, val in fields.items():
         defn = FIELD_REGISTRY.get(eid)
         if defn and len(val) > defn.max_length:
-            errors.append(ValidationError(
-                eid,
-                f"{defn.name} exceeds max length {defn.max_length}"
-                f" (got {len(val)})",
-                "warning",
-            ))
+            errors.append(
+                ValidationError(
+                    eid,
+                    f"{defn.name} exceeds max length {defn.max_length} (got {len(val)})",
+                    "warning",
+                )
+            )
 
 
-def _check_sex_code(
-    fields: dict[str, str], errors: list[ValidationError]
-) -> None:
+def _check_sex_code(fields: dict[str, str], errors: list[ValidationError]) -> None:
     """Sex must be 1 (male), 2 (female), or 9 (not specified)."""
     val = fields.get("DBC", "")
     if val and val not in ("1", "2", "9"):
-        errors.append(ValidationError(
-            "DBC", f"Sex code must be 1, 2, or 9, got: {val!r}", "error"
-        ))
+        errors.append(ValidationError("DBC", f"Sex code must be 1, 2, or 9, got: {val!r}", "error"))
 
 
 def _check_province_consistency(
@@ -106,38 +93,40 @@ def _check_province_consistency(
 
     country = fields.get("DCG", "")
     if country and country != profile.country:
-        errors.append(ValidationError(
-            "DCG",
-            f"Country {country!r} does not match province "
-            f"{province_code} (expected {profile.country!r})",
-            "error",
-        ))
+        errors.append(
+            ValidationError(
+                "DCG",
+                f"Country {country!r} does not match province "
+                f"{province_code} (expected {profile.country!r})",
+                "error",
+            )
+        )
 
     juris = fields.get("DAJ", "")
     if juris and juris != profile.code:
-        errors.append(ValidationError(
-            "DAJ",
-            f"Jurisdiction {juris!r} does not match "
-            f"province {profile.code!r}",
-            "warning",
-        ))
+        errors.append(
+            ValidationError(
+                "DAJ",
+                f"Jurisdiction {juris!r} does not match province {profile.code!r}",
+                "warning",
+            )
+        )
 
     postal = fields.get("DAK", "")
     if postal:
         pat = re.compile(profile.postal_code_pattern)
         cleaned = postal.strip()
         if not pat.match(cleaned):
-            errors.append(ValidationError(
-                "DAK",
-                f"Postal code {cleaned!r} does not match "
-                f"pattern for {province_code}",
-                "warning",
-            ))
+            errors.append(
+                ValidationError(
+                    "DAK",
+                    f"Postal code {cleaned!r} does not match pattern for {province_code}",
+                    "warning",
+                )
+            )
 
 
-def validate_aamva(
-    fields: dict[str, str], province_code: str
-) -> list[ValidationError]:
+def validate_aamva(fields: dict[str, str], province_code: str) -> list[ValidationError]:
     """Validate AAMVA fields against a province profile.
 
     Args:

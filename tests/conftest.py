@@ -1,5 +1,5 @@
 """Shared test fixtures for canada-id."""
-import json
+
 from pathlib import Path
 
 import pytest

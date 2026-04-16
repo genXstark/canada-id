@@ -1,12 +1,10 @@
 """Render MRZ text as a scannable image using OCR-B font simulation."""
+
 from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageFont
 
-
-OCR_B_CHARS = (
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
-)
+OCR_B_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 
 DEFAULT_CHAR_WIDTH = 12
 DEFAULT_CHAR_HEIGHT = 18
@@ -94,14 +92,20 @@ def render_mrz_with_frame(
     draw = ImageDraw.Draw(framed)
     border = 2 * scale
     draw.rectangle(
-        [frame_margin - border, frame_margin - border,
-         framed_w - frame_margin + border, framed_h - frame_margin + border],
-        outline=0, width=border,
+        [
+            frame_margin - border,
+            frame_margin - border,
+            framed_w - frame_margin + border,
+            framed_h - frame_margin + border,
+        ],
+        outline=0,
+        width=border,
     )
 
     corner_len = 15 * scale
     corners = [
-        (0, 0, corner_len, 0), (0, 0, 0, corner_len),
+        (0, 0, corner_len, 0),
+        (0, 0, 0, corner_len),
         (framed_w - corner_len, 0, framed_w, 0),
         (framed_w, 0, framed_w, corner_len),
         (0, framed_h, corner_len, framed_h),

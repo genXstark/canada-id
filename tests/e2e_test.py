@@ -1,5 +1,5 @@
 """Full end-to-end test across all features."""
-import json
+
 import tempfile
 
 from PIL import Image
@@ -10,7 +10,7 @@ from canada_id.aamva.validator import validate_aamva
 from canada_id.card.compositor import composite_barcode_on_card
 from canada_id.card.layout import BarcodeRegion
 from canada_id.cli import main
-from canada_id.codec.code39 import encode_code39, code39_to_image
+from canada_id.codec.code39 import code39_to_image, encode_code39
 from canada_id.codec.decoder import decode_pdf417_text
 from canada_id.codec.encoder import barcode_to_image, encode_pdf417
 from canada_id.guards import auto_fix_province, check_province_match, detect_province
@@ -20,22 +20,42 @@ from canada_id.mrz.parsers import parse_mrz
 from canada_id.provinces.registry import all_profiles
 from canada_id.storage import HistoryDB
 
-
 BASE_FIELDS = {
-    "DAQ": "TEST-12345-67890", "DCS": "KUMAR", "DAC": "ROHIT",
-    "DAD": "", "DBB": "19990706", "DBA": "20300706",
-    "DBD": "20220115", "DBC": "1", "DAY": "BRO",
-    "DAU": "180 cm", "DAG": "123 TEST STREET",
-    "DAI": "TESTCITY", "DCG": "CAN",
-    "DCA": "G", "DCB": "", "DCD": "",
-    "DCF": "TESTDOCID01", "DDE": "N", "DDF": "N", "DDG": "N",
+    "DAQ": "TEST-12345-67890",
+    "DCS": "KUMAR",
+    "DAC": "ROHIT",
+    "DAD": "",
+    "DBB": "19990706",
+    "DBA": "20300706",
+    "DBD": "20220115",
+    "DBC": "1",
+    "DAY": "BRO",
+    "DAU": "180 cm",
+    "DAG": "123 TEST STREET",
+    "DAI": "TESTCITY",
+    "DCG": "CAN",
+    "DCA": "G",
+    "DCB": "",
+    "DCD": "",
+    "DCF": "TESTDOCID01",
+    "DDE": "N",
+    "DDF": "N",
+    "DDG": "N",
 }
 
 POSTAL_CODES = {
-    "AB": "T2P 1J9", "BC": "V6B 3K9", "MB": "R3C 0V8",
-    "NB": "E1C 1G1", "NL": "A1B 3X9", "NT": "X1A 2P7",
-    "NS": "B3H 4R2", "NU": "X0A 0H0", "ON": "M5V 2T6",
-    "PE": "C1A 7N8", "QC": "H2B 2R8", "SK": "S4P 3Y2",
+    "AB": "T2P 1J9",
+    "BC": "V6B 3K9",
+    "MB": "R3C 0V8",
+    "NB": "E1C 1G1",
+    "NL": "A1B 3X9",
+    "NT": "X1A 2P7",
+    "NS": "B3H 4R2",
+    "NU": "X0A 0H0",
+    "ON": "M5V 2T6",
+    "PE": "C1A 7N8",
+    "QC": "H2B 2R8",
+    "SK": "S4P 3Y2",
     "YT": "Y1A 2C6",
 }
 
@@ -148,8 +168,11 @@ def test_card_compositor():
     card = Image.new("RGB", (856, 540), color=(255, 255, 255))
     bc_img = barcode_to_image(encode_pdf417("TEST"), scale=2)
     region = BarcodeRegion(
-        x_frac=0.02, y_frac=0.05, w_frac=0.37,
-        h_frac=0.90, rotation_deg=-90.0,
+        x_frac=0.02,
+        y_frac=0.05,
+        w_frac=0.37,
+        h_frac=0.90,
+        rotation_deg=-90.0,
     )
     result = composite_barcode_on_card(card, bc_img, region)
     assert result.size == (856, 540)

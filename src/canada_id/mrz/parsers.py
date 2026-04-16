@@ -3,6 +3,7 @@
 Regex-based field extraction with ICAO 9303 check digit validation.
 Ported from MRZParser-develop, stripped of French/Belgian/visa formats.
 """
+
 from __future__ import annotations
 
 import re
@@ -25,10 +26,7 @@ def detect_format(text: str) -> MrzFormat:
         return MrzFormat.TD2
     if n == 88:
         return MrzFormat.TD3
-    raise MrzParseError(
-        f"Cannot detect MRZ format: unexpected length {n}"
-        f" (expected 90, 72, or 88)"
-    )
+    raise MrzParseError(f"Cannot detect MRZ format: unexpected length {n} (expected 90, 72, or 88)")
 
 
 # ── TD1: 3 x 30 ────────────────────────────────────────
@@ -97,9 +95,13 @@ def parse_td1(text: str, *, ocr_correct: bool = False) -> MrzResult:
         and checksum.verify(dob_raw, dob_check)
         and checksum.verify(expiry_raw, expiry_check)
         and checksum.verify(
-            doc_number + doc_check + optional1
-            + dob_raw + dob_check
-            + expiry_raw + expiry_check
+            doc_number
+            + doc_check
+            + optional1
+            + dob_raw
+            + dob_check
+            + expiry_raw
+            + expiry_check
             + optional2,
             overall_check,
         )
@@ -185,10 +187,7 @@ def parse_td2(text: str, *, ocr_correct: bool = False) -> MrzResult:
         and checksum.verify(dob_raw, dob_check)
         and checksum.verify(expiry_raw, expiry_check)
         and checksum.verify(
-            doc_number + doc_check
-            + dob_raw + dob_check
-            + expiry_raw + expiry_check
-            + optional,
+            doc_number + doc_check + dob_raw + dob_check + expiry_raw + expiry_check + optional,
             overall_check,
         )
     )
@@ -275,10 +274,14 @@ def parse_td3(text: str, *, ocr_correct: bool = False) -> MrzResult:
         and checksum.verify(expiry_raw, expiry_check)
         and checksum.verify(personal_num, personal_check)
         and checksum.verify(
-            doc_number + doc_check
-            + dob_raw + dob_check
-            + expiry_raw + expiry_check
-            + personal_num + personal_check,
+            doc_number
+            + doc_check
+            + dob_raw
+            + dob_check
+            + expiry_raw
+            + expiry_check
+            + personal_num
+            + personal_check,
             overall_check,
         )
     )
@@ -329,9 +332,7 @@ def parse_mrz(
 
     text = text.replace("\r", "").replace(" ", "")
     if "\n" in text:
-        text = "".join(
-            line.strip() for line in text.split("\n") if line.strip()
-        )
+        text = "".join(line.strip() for line in text.split("\n") if line.strip())
     if auto_purify:
         text = _purify(text)
 
@@ -365,7 +366,9 @@ def validate_mrz(
     """Return True if all check digits pass."""
     try:
         result = parse_mrz(
-            text, ocr_correct=ocr_correct, canada_only=canada_only,
+            text,
+            ocr_correct=ocr_correct,
+            canada_only=canada_only,
         )
         return result.check_digits_valid
     except (MrzParseError, ValueError):

@@ -4,6 +4,7 @@ Weighted-sum algorithm (weights 7, 3, 1) used across all MRZ
 formats for document-number, date, and composite check digits.
 Ported from MRZParser-develop with verify_extended for ICAO Note j.
 """
+
 from __future__ import annotations
 
 _WEIGHTS = (7, 3, 1)
@@ -25,9 +26,7 @@ def compute(text: str) -> int:
     for i, ch in enumerate(text):
         val = _CHAR_VALUE.get(ch)
         if val is None:
-            raise ValueError(
-                f"Invalid MRZ character: {ch!r} at position {i}"
-            )
+            raise ValueError(f"Invalid MRZ character: {ch!r} at position {i}")
         total += val * _WEIGHTS[i % 3]
     return total % 10
 
@@ -74,7 +73,4 @@ def verify_extended(
     real_check = optional_data[sep - 1]
     ext = optional_data[: sep - 1]
 
-    return (
-        verify(doc_number + "<" + ext, real_check)
-        or verify(doc_number + ext, real_check)
-    )
+    return verify(doc_number + "<" + ext, real_check) or verify(doc_number + ext, real_check)
