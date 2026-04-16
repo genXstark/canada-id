@@ -26,7 +26,50 @@ def detect_format(text: str) -> MrzFormat:
         return MrzFormat.TD2
     if n == 88:
         return MrzFormat.TD3
-    raise MrzParseError(f"Cannot detect MRZ format: unexpected length {n} (expected 90, 72, or 88)")
+    raise MrzParseError(
+        f"Cannot detect MRZ format: got {n} characters"
+        f" (expected 90 for TD1, 72 for TD2, or 88 for TD3)."
+        f" Make sure you're pasting the raw MRZ lines"
+        f" (the <<< text), not the parsed field summary."
+    )
+
+
+# Letters commonly OCR-misread as < filler
+_FILLER_MISREADS = re.compile(r"[K]{3,}")
+
+
+def _fix_ocr_fillers(text: str) -> str:
+    """Replace runs of letters that OCR misread as < fillers.
+
+    Tesseract commonly reads < as K, C, or similar.
+    Runs of 3+ identical letters in filler positions
+    are almost certainly meant to be <.
+    """
+    return _FILLER_MISREADS.sub(
+        lambda m: "<" * len(m.group(0)), text,
+    )
+
+
+_MRZ_LINE = re.compile(r"[A-Z0-9<]{28,46}")
+
+
+def _extract_mrz_lines(text: str) -> str | None:
+    """Try to extract valid MRZ lines from noisy text.
+
+    Looks for lines of 30, 36, or 44 MRZ-valid characters.
+    Returns cleaned MRZ string if a valid set is found.
+    """
+    lines = _MRZ_LINE.findall(text)
+    if not lines:
+        return None
+
+    # Group by expected line length
+    for line_len, count in [(30, 3), (44, 2), (36, 2)]:
+        matching = [ln for ln in lines if len(ln) == line_len]
+        if len(matching) >= count:
+            return "".join(matching[:count])
+
+    return None
 
 
 # ── TD1: 3 x 30 ────────────────────────────────────────
@@ -41,16 +84,16 @@ _TD1_LINE1 = re.compile(
 
 _TD1_LINE2 = re.compile(
     r"([0-9<]{6})"
-    r"([0-9]{1})"
+    r"([0-9<]{1})"
     r"([MFX<]{1})"
-    r"([0-9]{6})"
-    r"([0-9]{1})"
+    r"([0-9<]{6})"
+    r"([0-9<]{1})"
     r"([A-Z<]{3})"
     r"([A-Z0-9<]{11})"
-    r"([0-9]{1})"
+    r"([0-9<]{1})"
 )
 
-_TD1_LINE3 = re.compile(r"([A-Z<]{30})")
+_TD1_LINE3 = re.compile(r"([A-Z0-9<]{30})")
 
 
 def parse_td1(text: str, *, ocr_correct: bool = False) -> MrzResult:
@@ -141,12 +184,12 @@ _TD2_LINE2 = re.compile(
     r"([0-9<]{1})"
     r"([A-Z<]{3})"
     r"([0-9<]{6})"
-    r"([0-9]{1})"
+    r"([0-9<]{1})"
     r"([MFX<]{1})"
-    r"([0-9]{6})"
-    r"([0-9]{1})"
+    r"([0-9<]{6})"
+    r"([0-9<]{1})"
     r"([A-Z0-9<]{7})"
-    r"([0-9]{1})"
+    r"([0-9<]{1})"
 )
 
 
@@ -225,13 +268,13 @@ _TD3_LINE2 = re.compile(
     r"([0-9<]{1})"
     r"([A-Z<]{3})"
     r"([0-9<]{6})"
-    r"([0-9]{1})"
+    r"([0-9<]{1})"
     r"([MFX<]{1})"
-    r"([0-9]{6})"
-    r"([0-9]{1})"
+    r"([0-9<]{6})"
+    r"([0-9<]{1})"
     r"([A-Z0-9<]{14})"
     r"([0-9<]{1})"
-    r"([0-9]{1})"
+    r"([0-9<]{1})"
 )
 
 
@@ -330,11 +373,30 @@ def parse_mrz(
     """
     from canada_id.mrz.utils import purify as _purify
 
-    text = text.replace("\r", "").replace(" ", "")
+    # Try extracting valid MRZ lines from raw text first
+    # (before stripping newlines which destroys line boundaries)
+    raw_for_extract = text.replace("\r", "")
+    text = raw_for_extract.replace(" ", "")
     if "\n" in text:
         text = "".join(line.strip() for line in text.split("\n") if line.strip())
     if auto_purify:
         text = _purify(text)
+
+    # OCR filler correction: letters commonly misread for <
+    if ocr_correct:
+        text = _fix_ocr_fillers(text)
+
+    # If length doesn't match any format, try extracting
+    # valid MRZ lines from the raw text (preserves line breaks)
+    if len(text) not in (90, 72, 88):
+        extracted = _extract_mrz_lines(raw_for_extract)
+        if extracted:
+            text = extracted
+
+    # Off-by-one fix: trim trailing < if 1 char over
+    if len(text) in (91, 73, 89):
+        if text[-1] == "<":
+            text = text[:-1]
 
     fmt = detect_format(text)
 

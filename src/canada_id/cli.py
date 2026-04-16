@@ -86,11 +86,17 @@ def encode(province: str, fields_path: str, output: str, scale: int):
     with open(fields_path) as f:
         fields = json.load(f)
 
+    from PIL import Image as PILImage
+
+    from canada_id.web import _barcode_size
+
     aamva_string = build_aamva(fields, province.upper())
     barcode = encode_pdf417(aamva_string)
     img = barcode_to_image(barcode, scale=scale)
+    w, h = _barcode_size(province.upper())
+    img = img.resize((w, h), PILImage.NEAREST)
     img.save(output)
-    click.echo(f"Barcode saved to {output}")
+    click.echo(f"Barcode saved to {output} ({w}x{h})")
 
 
 @main.command()
@@ -161,10 +167,14 @@ def composite(
     with open(fields_path) as f:
         fields = json.load(f)
 
-    get_profile(province.upper())
+    profile = get_profile(province.upper())
+    from canada_id.web import _barcode_size
+
     aamva_string = build_aamva(fields, province.upper())
     barcode = encode_pdf417(aamva_string)
     barcode_img = barcode_to_image(barcode, scale=3)
+    w, h = _barcode_size(province.upper())
+    barcode_img = barcode_img.resize((w, h), Image.NEAREST)
 
     card_img = Image.open(template_path)
     region = BarcodeRegion(
