@@ -3,12 +3,12 @@
 Canada-only subset: TD1 (ID cards), TD2 (travel docs), TD3 (passports).
 Ported from MRZParser-develop, stripped of French/Belgian/visa formats.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
-from typing import Optional
 
 
 class MrzFormat(Enum):
@@ -52,8 +52,8 @@ class MrzResult:
     date_of_birth: str = ""
     sex: Sex = Sex.UNSPECIFIED
     expiry_date: str = ""
-    birth_date: Optional[date] = None
-    expiry_date_parsed: Optional[date] = None
+    birth_date: date | None = None
+    expiry_date_parsed: date | None = None
     personal_number: str = ""
     optional_data_1: str = ""
     optional_data_2: str = ""
@@ -68,8 +68,7 @@ class MrzResult:
     def __str__(self) -> str:
         parts = [
             f"Format:           {self.format.value}",
-            f"Document Type:    {self.document_type}"
-            f"{self.document_type_additional}",
+            f"Document Type:    {self.document_type}{self.document_type_additional}",
             f"Issuing Country:  {self.issuing_country}",
             f"Surname:          {self.surname}",
             f"Given Names:      {self.given_names}",
@@ -79,11 +78,7 @@ class MrzResult:
             + (f"  ({self.birth_date})" if self.birth_date else ""),
             f"Sex:              {self.sex.value}",
             f"Expiry Date:      {self.expiry_date}"
-            + (
-                f"  ({self.expiry_date_parsed})"
-                if self.expiry_date_parsed
-                else ""
-            ),
+            + (f"  ({self.expiry_date_parsed})" if self.expiry_date_parsed else ""),
         ]
         if self.personal_number:
             parts.append(f"Personal Number:  {self.personal_number}")

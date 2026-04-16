@@ -1,4 +1,5 @@
 """Tests for MRZ generation, parsing, and AAMVA bridge (new API)."""
+
 import pytest
 
 from canada_id.mrz.aamva_bridge import aamva_to_mrz_data
@@ -60,7 +61,7 @@ class TestTD1:
         mrz = generate_mrz(td1_data, "TD1")
         lines = lines_from_mrz(mrz)
         assert len(lines) == 3
-        assert all(len(l) == 30 for l in lines)
+        assert all(len(line) == 30 for line in lines)
 
     def test_td1_roundtrip(self, td1_data):
         mrz = generate_mrz(td1_data, "TD1")
@@ -132,7 +133,7 @@ class TestTD3:
         mrz = generate_mrz(td3_data, "TD3")
         lines = lines_from_mrz(mrz)
         assert len(lines) == 2
-        assert all(len(l) == 44 for l in lines)
+        assert all(len(line) == 44 for line in lines)
 
     def test_td3_roundtrip(self, td3_data):
         mrz = generate_mrz(td3_data, "TD3")
@@ -193,8 +194,11 @@ class TestMrzFormat:
 
     def test_format_enum_accepted(self):
         data = MRZData(
-            surname="X", given_names="Y", document_number="1",
-            date_of_birth="000101", expiry_date="300101",
+            surname="X",
+            given_names="Y",
+            document_number="1",
+            date_of_birth="000101",
+            expiry_date="300101",
         )
         mrz = generate_mrz(data, MrzFormat.TD1)
         assert len(mrz) == 90
@@ -222,8 +226,12 @@ class TestAAMVABridge:
 
     def test_sex_code_mapping(self):
         fields = {
-            "DBC": "2", "DCS": "DOE", "DAC": "JANE",
-            "DBB": "19850320", "DBA": "20270320", "DAQ": "123",
+            "DBC": "2",
+            "DCS": "DOE",
+            "DAC": "JANE",
+            "DBB": "19850320",
+            "DBA": "20270320",
+            "DAQ": "123",
         }
         mrz_data = aamva_to_mrz_data(fields)
         assert mrz_data.sex == "F"
@@ -234,10 +242,15 @@ class TestRenderer:
 
     def test_render_produces_image(self):
         data = MRZData(
-            document_type="P", country_code="CAN",
-            surname="TEST", given_names="USER",
-            document_number="ZZ9999999", nationality="CAN",
-            date_of_birth="000101", sex="M", expiry_date="300101",
+            document_type="P",
+            country_code="CAN",
+            surname="TEST",
+            given_names="USER",
+            document_number="ZZ9999999",
+            nationality="CAN",
+            date_of_birth="000101",
+            sex="M",
+            expiry_date="300101",
         )
         mrz = generate_mrz(data, "TD3")
         lines = lines_from_mrz(mrz)

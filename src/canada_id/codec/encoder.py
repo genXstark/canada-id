@@ -4,6 +4,7 @@ Ported from AAMVA-to-PDF417-Generator (JavaScript), which was
 ported from TCPDF's PHP PDF417 class.  Uses Python's native
 arbitrary-precision integers instead of bcmath.
 """
+
 from __future__ import annotations
 
 import math
@@ -72,7 +73,9 @@ def encode_pdf417(
     err_size = 2 << ecl
 
     cols, rows, size = _calc_dimensions(
-        num_cw, err_size, aspect_ratio,
+        num_cw,
+        err_size,
+        aspect_ratio,
     )
 
     pad = size - (num_cw + err_size + 1)
@@ -127,14 +130,13 @@ def barcode_to_image(
 
 
 def _calc_dimensions(
-    num_cw: int, err_size: int, aspect_ratio: float,
+    num_cw: int,
+    err_size: int,
+    aspect_ratio: float,
 ) -> tuple[int, int, int]:
     """Return (cols, rows, size) for the symbol."""
     nce = num_cw + err_size + 1
-    cols = round(
-        (math.sqrt(4761 + 68 * aspect_ratio * ROWHEIGHT * nce)
-         - 69) / 34
-    )
+    cols = round((math.sqrt(4761 + 68 * aspect_ratio * ROWHEIGHT * nce) - 69) / 34)
     cols = max(1, min(cols, 30))
     rows = math.ceil(nce / cols)
     size = cols * rows
@@ -192,7 +194,8 @@ def _extract_text_byte(
     """Extract text and byte sub-sequences from *prev*."""
     text_runs: list[tuple[str, int]] = []
     for m in re.finditer(
-        r"[\x09\x0a\x0d\x20-\x7e]{5,}", prev,
+        r"[\x09\x0a\x0d\x20-\x7e]{5,}",
+        prev,
     ):
         text_runs.append((m.group(), m.start()))
     text_runs.append(("", len(prev)))
@@ -251,13 +254,13 @@ def _text_compaction(code: str) -> list[int]:
             next_in_cur = (
                 i + 1 < len(code)
                 and _index_of(
-                    ord(code[i + 1]), TEXT_SUBMODES[submode],
-                ) is not None
+                    ord(code[i + 1]),
+                    TEXT_SUBMODES[submode],
+                )
+                is not None
             )
             is_last = i + 1 == len(code)
-            if (is_last or next_in_cur) and (
-                s == 3 or (s == 0 and submode == 1)
-            ):
+            if (is_last or next_in_cur) and (s == 3 or (s == 0 and submode == 1)):
                 txt_arr.append(29 if s == 3 else 27)
             else:
                 key = f"{submode}{s}"
@@ -325,7 +328,8 @@ def _numeric_compaction(code: str) -> list[int]:
 
 
 def _get_error_correction_level(
-    ecl: int, num_cw: int,
+    ecl: int,
+    num_cw: int,
 ) -> int:
     """Select ECL automatically if *ecl* < 0 or > 8."""
     max_ecl = 8
@@ -354,7 +358,8 @@ def _get_error_correction_level(
 
 
 def _get_error_correction(
-    cw: list[int], ecl: int,
+    cw: list[int],
+    ecl: int,
 ) -> list[int]:
     """Compute Reed-Solomon error-correction codewords."""
     ecc = RS_FACTORS[ecl]
@@ -404,7 +409,8 @@ def _render_barcode(
 
         for _ in range(cols):
             row_bits += format(
-                CLUSTERS[cid][codewords[k]], "017b",
+                CLUSTERS[cid][codewords[k]],
+                "017b",
             )
             k += 1
 
@@ -425,7 +431,11 @@ def _render_barcode(
 
 
 def _left_indicator(
-    r: int, rows: int, cols: int, ecl: int, cid: int,
+    r: int,
+    rows: int,
+    cols: int,
+    ecl: int,
+    cid: int,
 ) -> int:
     """Compute left row-indicator codeword index."""
     base = 30 * (r // 3)
@@ -437,7 +447,11 @@ def _left_indicator(
 
 
 def _right_indicator(
-    r: int, rows: int, cols: int, ecl: int, cid: int,
+    r: int,
+    rows: int,
+    cols: int,
+    ecl: int,
+    cid: int,
 ) -> int:
     """Compute right row-indicator codeword index."""
     base = 30 * (r // 3)

@@ -3,6 +3,7 @@
 Every encode, decode, and validation is logged with timestamps,
 field data, images, and AAMVA strings for full audit history.
 """
+
 from __future__ import annotations
 
 import io
@@ -53,7 +54,8 @@ class OperationRecord:
     def created_at_iso(self) -> str:
         """Human-readable timestamp."""
         return time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(self.created_at),
+            "%Y-%m-%d %H:%M:%S",
+            time.localtime(self.created_at),
         )
 
 
@@ -64,7 +66,8 @@ class HistoryDB:
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
-            str(self.db_path), check_same_thread=False,
+            str(self.db_path),
+            check_same_thread=False,
         )
         self._conn.executescript(_SCHEMA)
 
@@ -123,7 +126,10 @@ class HistoryDB:
         limit: int = 50,
     ) -> list[OperationRecord]:
         """Retrieve operation history with optional filters."""
-        query = "SELECT id, op_type, province, fields_json, aamva_string, raw_payload, errors, created_at FROM operations WHERE 1=1"
+        query = (
+            "SELECT id, op_type, province, fields_json, aamva_string,"
+            " raw_payload, errors, created_at FROM operations WHERE 1=1"
+        )
         params: list = []
 
         if op_type:

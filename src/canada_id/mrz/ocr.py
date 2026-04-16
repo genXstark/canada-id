@@ -4,6 +4,7 @@ Fixes common OCR misreads by mapping visually similar characters.
 Corrections are context-dependent: date fields get letter-to-digit,
 name fields get digit-to-letter. Ported from MRZParser-develop.
 """
+
 from __future__ import annotations
 
 _LETTER_TO_DIGIT: dict[str, str] = {

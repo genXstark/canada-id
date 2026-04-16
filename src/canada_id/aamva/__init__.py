@@ -2,8 +2,7 @@
 
 from canada_id.aamva.builder import build_aamva
 from canada_id.aamva.fields import FIELD_ORDER, FIELD_REGISTRY, FieldDef
-from canada_id.aamva.header import AAMVAHeader, SubfileEntry
-from canada_id.aamva.header import build_header, parse_header
+from canada_id.aamva.header import AAMVAHeader, SubfileEntry, build_header, parse_header
 from canada_id.aamva.parser import parse_aamva, parse_aamva_structured
 from canada_id.aamva.validator import ValidationError, validate_aamva
 

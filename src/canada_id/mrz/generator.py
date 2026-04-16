@@ -3,6 +3,7 @@
 Generates valid MRZ strings with correct check digits for
 TD1, TD2, and TD3 formats. Ported from MRZParser-develop.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -66,10 +67,7 @@ def generate_mrz(
     Returns:
         Continuous MRZ string (no newlines).
     """
-    if isinstance(format_type, MrzFormat):
-        fmt = format_type
-    else:
-        fmt = MrzFormat(format_type.upper())
+    fmt = format_type if isinstance(format_type, MrzFormat) else MrzFormat(format_type.upper())
 
     doc_type = pad(data.document_type.upper(), 2)
     country = pad(data.country_code.upper(), 3)
@@ -81,29 +79,59 @@ def generate_mrz(
 
     if fmt == MrzFormat.TD1:
         return _generate_td1(
-            doc_type, country, doc_num, nat,
-            dob, sex, exp, data.surname, data.given_names,
-            data.optional_data_1, data.optional_data_2,
+            doc_type,
+            country,
+            doc_num,
+            nat,
+            dob,
+            sex,
+            exp,
+            data.surname,
+            data.given_names,
+            data.optional_data_1,
+            data.optional_data_2,
         )
     if fmt == MrzFormat.TD2:
         return _generate_td2(
-            doc_type, country, doc_num, nat,
-            dob, sex, exp, data.surname, data.given_names,
+            doc_type,
+            country,
+            doc_num,
+            nat,
+            dob,
+            sex,
+            exp,
+            data.surname,
+            data.given_names,
             data.optional_data_1,
         )
     if fmt == MrzFormat.TD3:
         return _generate_td3(
-            doc_type, country, doc_num, nat,
-            dob, sex, exp, data.surname, data.given_names,
+            doc_type,
+            country,
+            doc_num,
+            nat,
+            dob,
+            sex,
+            exp,
+            data.surname,
+            data.given_names,
             data.optional_data_1,
         )
     raise ValueError(f"Unsupported format: {fmt}")
 
 
 def _generate_td1(
-    doc_type, country, doc_num, nationality,
-    dob, sex, expiry, surname, given_names,
-    opt1, opt2,
+    doc_type,
+    country,
+    doc_num,
+    nationality,
+    dob,
+    sex,
+    expiry,
+    surname,
+    given_names,
+    opt1,
+    opt2,
 ):
     """Generate TD1: 3 x 30."""
     doc_num_padded = pad(doc_num, 9)
@@ -117,23 +145,33 @@ def _generate_td1(
     opt2_padded = pad(opt2, 11)
 
     composite = (
-        doc_num_padded + doc_check + opt1_padded
-        + dob + dob_check + expiry + exp_check + opt2_padded
+        doc_num_padded
+        + doc_check
+        + opt1_padded
+        + dob
+        + dob_check
+        + expiry
+        + exp_check
+        + opt2_padded
     )
     overall_check = _check(composite)
 
-    line2 = (
-        dob + dob_check + sex + expiry + exp_check
-        + nationality + opt2_padded + overall_check
-    )
+    line2 = dob + dob_check + sex + expiry + exp_check + nationality + opt2_padded + overall_check
 
     line3 = encode_name(surname, given_names, 30)
     return line1 + line2 + line3
 
 
 def _generate_td2(
-    doc_type, country, doc_num, nationality,
-    dob, sex, expiry, surname, given_names,
+    doc_type,
+    country,
+    doc_num,
+    nationality,
+    dob,
+    sex,
+    expiry,
+    surname,
+    given_names,
     opt,
 ):
     """Generate TD2: 2 x 36."""
@@ -146,25 +184,34 @@ def _generate_td2(
     exp_check = _check(expiry)
     opt_padded = pad(opt, 7)
 
-    composite = (
-        doc_num_padded + doc_check
-        + dob + dob_check
-        + expiry + exp_check
-        + opt_padded
-    )
+    composite = doc_num_padded + doc_check + dob + dob_check + expiry + exp_check + opt_padded
     overall_check = _check(composite)
 
     line2 = (
-        doc_num_padded + doc_check + nationality
-        + dob + dob_check + sex + expiry + exp_check
-        + opt_padded + overall_check
+        doc_num_padded
+        + doc_check
+        + nationality
+        + dob
+        + dob_check
+        + sex
+        + expiry
+        + exp_check
+        + opt_padded
+        + overall_check
     )
     return line1 + line2
 
 
 def _generate_td3(
-    doc_type, country, doc_num, nationality,
-    dob, sex, expiry, surname, given_names,
+    doc_type,
+    country,
+    doc_num,
+    nationality,
+    dob,
+    sex,
+    expiry,
+    surname,
+    given_names,
     personal_number,
 ):
     """Generate TD3: 2 x 44."""
@@ -179,16 +226,21 @@ def _generate_td3(
     pn_check = _check(pn_padded)
 
     composite = (
-        doc_num_padded + doc_check
-        + dob + dob_check
-        + expiry + exp_check
-        + pn_padded + pn_check
+        doc_num_padded + doc_check + dob + dob_check + expiry + exp_check + pn_padded + pn_check
     )
     overall_check = _check(composite)
 
     line2 = (
-        doc_num_padded + doc_check + nationality
-        + dob + dob_check + sex + expiry + exp_check
-        + pn_padded + pn_check + overall_check
+        doc_num_padded
+        + doc_check
+        + nationality
+        + dob
+        + dob_check
+        + sex
+        + expiry
+        + exp_check
+        + pn_padded
+        + pn_check
+        + overall_check
     )
     return line1 + line2

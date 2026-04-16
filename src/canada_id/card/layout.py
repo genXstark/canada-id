@@ -1,4 +1,5 @@
 """Card layout definitions for barcode placement."""
+
 from dataclasses import dataclass
 
 
