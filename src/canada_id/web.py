@@ -21,6 +21,19 @@ def _extract_code(choice: str) -> str:
     return choice.split(" - ")[0].strip().upper() if choice else ""
 
 
+# Province-specific PDF417 barcode dimensions (width, height).
+# Ontario uses a wider barcode than others.
+_BARCODE_SIZES: dict[str, tuple[int, int]] = {
+    "ON": (805, 116),
+}
+_DEFAULT_BARCODE_SIZE = (404, 82)
+
+
+def _barcode_size(province_code: str) -> tuple[int, int]:
+    """Return barcode pixel dimensions for a province."""
+    return _BARCODE_SIZES.get(province_code, _DEFAULT_BARCODE_SIZE)
+
+
 def _decode_image(image):
     """Decode a PDF417 barcode image and parse AAMVA fields."""
     if image is None:
@@ -87,6 +100,8 @@ def _encode_barcode(province_choice, fields_json):
     aamva_string = build_aamva(fields, province_code)
     barcode = encode_pdf417(aamva_string)
     img = barcode_to_image(barcode, scale=3)
+    w, h = _barcode_size(province_code)
+    img = img.resize((w, h), Image.NEAREST)
 
     if not status_msg:
         status_msg = f"OK — generated for {province_code}"
@@ -264,7 +279,13 @@ def _composite_card(card_image, barcode_image, x_frac, y_frac,
 
 
 def _mrz_result_text(result) -> str:
-    """Format an MrzResult into readable text."""
+    """Format an MrzResult into readable text.
+
+    Includes raw optional data extracted directly from the
+    MRZ string to preserve exact encoding (with < fillers).
+    """
+    from canada_id.mrz.models import MrzFormat
+
     lines = [
         f"Format: {result.format.value}",
         f"Check digits valid: {result.check_digits_valid}",
@@ -278,12 +299,18 @@ def _mrz_result_text(result) -> str:
         f"Sex: {result.sex.value}",
         f"Expiry: {result.expiry_date}",
     ]
-    if result.optional_data_1:
-        lines.append(f"Optional 1: {result.optional_data_1}")
-    if result.optional_data_2:
-        lines.append(f"Optional 2: {result.optional_data_2}")
+
+    # Extract raw optional data from raw_mrz to preserve
+    # exact < filler positions (needed for roundtrip)
+    raw_opt1, raw_opt2 = _extract_raw_optional(result)
+
+    if raw_opt1:
+        lines.append(f"Optional 1: {raw_opt1}")
+    if raw_opt2:
+        lines.append(f"Optional 2: {raw_opt2}")
     if result.personal_number:
-        lines.append(f"Personal Number: {result.personal_number}")
+        pn = _extract_raw_personal_number(result)
+        lines.append(f"Personal Number: {pn}")
     if result.birth_date:
         lines.append(f"Birth Date: {result.birth_date.isoformat()}")
     if result.expiry_date_parsed:
@@ -293,27 +320,71 @@ def _mrz_result_text(result) -> str:
     return "\n".join(lines)
 
 
-def _load_passport_template():
-    """Load sample Canadian Passport (TD3) fields."""
-    return (
-        "P", "TD3", "CAN",
-        "SMITH", "JOHN MICHAEL",
-        "AB1234567", "CAN",
-        "900115", "M", "280115",
-        "",        # optional_data_1 (personal number for TD3)
-        "",        # optional_data_2 (TD1 only)
-    )
+def _extract_raw_optional(result) -> tuple[str, str]:
+    """Extract raw optional data from raw_mrz preserving <."""
+    from canada_id.mrz.models import MrzFormat
+
+    raw = result.raw_mrz
+    if not raw:
+        return result.optional_data_1, result.optional_data_2
+
+    if result.format == MrzFormat.TD1 and len(raw) == 90:
+        opt1 = raw[15:30]   # line 1, positions 16-30
+        opt2 = raw[48:59]   # line 2, positions 19-29
+        return opt1, opt2
+    if result.format == MrzFormat.TD2 and len(raw) == 72:
+        opt1 = raw[65:72]   # line 2, positions 30-36
+        return opt1, ""
+    return result.optional_data_1, result.optional_data_2
 
 
-def _load_pr_template():
-    """Load sample Canadian PR Card (TD1) fields."""
+def _extract_raw_personal_number(result) -> str:
+    """Extract raw personal number from raw_mrz preserving <."""
+    from canada_id.mrz.models import MrzFormat
+
+    raw = result.raw_mrz
+    if result.format == MrzFormat.TD3 and len(raw) == 88:
+        return raw[72:86]   # line 2, positions 29-42
+    return result.personal_number
+
+
+def _doc_type_choices() -> list[str]:
+    """Build document type dropdown choices."""
+    from canada_id.mrz.canada_docs import doc_choices
+    return doc_choices()
+
+
+def _load_doc_template(doc_choice: str):
+    """Load sample fields for a Canadian document type."""
+    from canada_id.mrz.canada_docs import CANADIAN_DOCS
+
+    if not doc_choice:
+        return (
+            "I", "TD1", "CAN", "", "", "",
+            "CAN", "", "M", "", "", "",
+        )
+
+    key = doc_choice.split(" - ")[0].strip()
+    doc = CANADIAN_DOCS.get(key)
+    if not doc:
+        return (
+            "I", "TD1", "CAN", "", "", "",
+            "CAN", "", "M", "", "", "",
+        )
+
     return (
-        "I", "TD1", "CAN",
-        "MAGHA MOFFO", "MATHILDE",
-        "PD0183017", "CMR",
-        "841127", "F", "260430",
-        "ON",      # optional_data_1
-        "",        # optional_data_2
+        doc.document_type,
+        doc.mrz_format,
+        doc.issuing_country,
+        doc.sample_surname,
+        doc.sample_given,
+        doc.sample_doc_num,
+        doc.sample_nationality,
+        doc.sample_dob,
+        doc.sample_sex,
+        doc.sample_expiry,
+        doc.sample_opt1,
+        doc.sample_opt2,
     )
 
 
@@ -332,10 +403,11 @@ def _mrz_generate(
     doc_type, mrz_format, country, surname, given_names,
     doc_num, nationality, dob, sex, expiry, opt1, opt2,
 ):
-    """Generate MRZ from form fields with input validation."""
+    """Generate MRZ from form fields with structured validation."""
     from canada_id.mrz.generator import MRZData, generate_mrz
     from canada_id.mrz.renderer import render_mrz_image
     from canada_id.mrz.utils import lines_from_mrz
+    from canada_id.mrz.validate import validate_mrz_fields
 
     # Clean all fields — strip spaces, invalid chars
     doc_type = (doc_type or "I").strip()
@@ -351,39 +423,32 @@ def _mrz_generate(
     opt1 = _clean_mrz_field(opt1, "Optional Data 1")
     opt2 = _clean_mrz_field(opt2, "Optional Data 2")
 
-    # Validate with clear field-level errors
-    errors = []
-    if not surname_clean:
-        errors.append("Surname is required")
-    if not doc_num:
-        errors.append("Document Number is required")
-    if len(doc_num) > 9:
-        errors.append(
-            f"Document Number too long: '{doc_num}'"
-            f" ({len(doc_num)} chars, max 9)"
+    # Structured validation with clear field-level messages
+    report = validate_mrz_fields(
+        document_type=doc_type,
+        country_code=country,
+        surname=surname_clean,
+        given_names=given_clean,
+        document_number=doc_num,
+        nationality=nationality,
+        date_of_birth=dob,
+        sex=sex,
+        expiry_date=expiry,
+        mrz_format=mrz_format,
+        optional_data_1=opt1,
+        optional_data_2=opt2,
+    )
+
+    if not report.valid:
+        return "", None, report.summary()
+
+    # Warnings are OK — show them alongside success
+    warn_text = ""
+    if report.warnings:
+        warn_text = "\n" + "\n".join(
+            f"⚠ {w.field_name}: {w.message}"
+            for w in report.warnings
         )
-    if not country or len(country) != 3:
-        errors.append(
-            f"Issuing Country must be 3 letters,"
-            f" got '{country}'"
-        )
-    if not nationality or len(nationality) != 3:
-        errors.append(
-            f"Nationality must be 3 letters,"
-            f" got '{nationality}'"
-        )
-    if dob and len(dob) != 6:
-        errors.append(
-            f"Date of Birth must be YYMMDD (6 digits),"
-            f" got '{dob}' ({len(dob)} chars)"
-        )
-    if expiry and len(expiry) != 6:
-        errors.append(
-            f"Expiry Date must be YYMMDD (6 digits),"
-            f" got '{expiry}' ({len(expiry)} chars)"
-        )
-    if errors:
-        return "", None, "FIELD ERRORS:\n" + "\n".join(errors)
 
     try:
         data = MRZData(
@@ -403,7 +468,26 @@ def _mrz_generate(
         lines = lines_from_mrz(mrz)
         display = "\n".join(lines)
         img = render_mrz_image(display, scale=3)
-        return display, img, f"OK - {mrz_format} generated"
+
+        # Roundtrip validation — parse what we generated
+        from canada_id.mrz.parsers import parse_mrz
+        try:
+            result = parse_mrz(
+                mrz, canada_only=False,
+            )
+            if result.check_digits_valid:
+                status = f"OK - {mrz_format} generated, check digits VALID"
+            else:
+                status = (
+                    f"OK - {mrz_format} generated"
+                    f" but check digits INVALID"
+                )
+        except Exception:
+            status = f"OK - {mrz_format} generated"
+
+        if warn_text:
+            status += warn_text
+        return display, img, status
     except (ValueError, Exception) as e:
         return "", None, f"Error: {e}"
 
@@ -433,6 +517,7 @@ def _mrz_scan_image(image):
     try:
         result = parse_mrz(
             mrz_text, ocr_correct=True, canada_only=False,
+            auto_purify=True,
         )
         parsed = _mrz_result_text(result)
         valid = "VALID" if result.check_digits_valid else "INVALID"
@@ -445,7 +530,11 @@ def _mrz_scan_image(image):
 
 
 def _mrz_fill_from_scan(scan_parsed):
-    """Fill generate form from scanned/parsed MRZ fields."""
+    """Fill generate form from scanned/parsed MRZ fields.
+
+    Optional data fields preserve < characters from the
+    raw MRZ to ensure roundtrip fidelity (same check digits).
+    """
     if not scan_parsed or not scan_parsed.strip():
         return (
             gr.update(), gr.update(), gr.update(),
@@ -480,14 +569,17 @@ def _mrz_fill_from_scan(scan_parsed):
     if doc_type and len(doc_type) >= 1:
         doc_type = doc_type[0]
 
-    # Clean all fields — remove spaces and invalid chars
+    # Clean code/date fields — remove spaces and invalid chars
     doc_num = _clean_mrz_field(doc_num, "doc_num")
     country = _clean_mrz_field(country, "country")
     nationality = _clean_mrz_field(nationality, "nationality")
     dob = _clean_mrz_field(dob, "dob")
     expiry = _clean_mrz_field(expiry, "expiry")
-    opt1 = _clean_mrz_field(opt1, "opt1")
-    opt2 = _clean_mrz_field(opt2, "opt2")
+
+    # Optional data: preserve < fillers for exact roundtrip.
+    # These come from raw MRZ extraction with < intact.
+    opt1 = opt1.strip().upper()
+    opt2 = opt2.strip().upper()
 
     return (
         doc_type, fmt, country,
@@ -509,6 +601,7 @@ def _mrz_parse_text(mrz_text, ocr_correct):
             mrz_text.strip(),
             ocr_correct=bool(ocr_correct),
             canada_only=False,
+            auto_purify=True,
         )
         parsed = _mrz_result_text(result)
         valid = "VALID" if result.check_digits_valid else "INVALID"
@@ -756,11 +849,15 @@ def create_app() -> gr.Blocks:
             # ── Section 1: Generate ──
             gr.Markdown("### 1. Generate MRZ")
             with gr.Row():
-                passport_btn = gr.Button(
-                    "Passport Template (TD3)",
+                mrz_doc_selector = gr.Dropdown(
+                    choices=_doc_type_choices(),
+                    label="Load Template",
+                    info="Select a Canadian document type"
+                    " to fill sample data",
                 )
-                pr_btn = gr.Button(
-                    "PR Card Template (TD1)",
+                load_template_btn = gr.Button(
+                    "Load Template",
+                    variant="secondary",
                 )
                 fill_btn = gr.Button(
                     "Fill from Scan/Parse",
@@ -855,13 +952,10 @@ def create_app() -> gr.Blocks:
                 mrz_expiry, mrz_opt1, mrz_opt2,
             ]
 
-            passport_btn.click(
-                _load_passport_template,
-                inputs=[], outputs=_gen_fields,
-            )
-            pr_btn.click(
-                _load_pr_template,
-                inputs=[], outputs=_gen_fields,
+            load_template_btn.click(
+                _load_doc_template,
+                inputs=[mrz_doc_selector],
+                outputs=_gen_fields,
             )
             mrz_gen_btn.click(
                 _mrz_generate,
