@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canada ID — AAMVA PDF417 Barcode Platform</title>
+  <style>
+    :root {
+      --red: #d52b1e;
+      --dark: #1a1a2e;
+      --light: #f5f5f5;
+      --accent: #e63946;
+      --card-bg: #ffffff;
+      --text: #333;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+      color: var(--text);
+      background: var(--light);
+      line-height: 1.6;
+    }
+    .hero {
+      background: linear-gradient(135deg, var(--dark) 0%, #16213e 100%);
+      color: #fff;
+      text-align: center;
+      padding: 5rem 2rem 4rem;
+    }
+    .hero h1 {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    .hero h1 .maple { color: var(--red); }
+    .hero p {
+      font-size: 1.25rem;
+      opacity: 0.85;
+      max-width: 600px;
+      margin: 0.5rem auto 2rem;
+    }
+    .badge-row {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+    .badge-row img { height: 22px; }
+    .cta-row {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.75rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+    .btn-primary { background: var(--red); color: #fff; }
+    .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.3); }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      max-width: 1000px;
+      margin: -2rem auto 3rem;
+      padding: 0 2rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .card h3 { margin-bottom: 0.5rem; color: var(--dark); }
+    .card .icon { font-size: 2rem; margin-bottom: 0.75rem; display: block; }
+
+    .section {
+      max-width: 800px;
+      margin: 0 auto 3rem;
+      padding: 0 2rem;
+    }
+    .section h2 {
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+      color: var(--dark);
+      border-bottom: 3px solid var(--red);
+      display: inline-block;
+      padding-bottom: 0.25rem;
+    }
+    pre {
+      background: var(--dark);
+      color: #e0e0e0;
+      padding: 1.25rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin: 1rem 0;
+    }
+    code { font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; }
+    .inline-code {
+      background: #e8e8e8;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    .provinces {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .prov {
+      background: var(--card-bg);
+      padding: 0.5rem;
+      border-radius: 6px;
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.9rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: #888;
+      font-size: 0.85rem;
+      border-top: 1px solid #ddd;
+    }
+    footer a { color: var(--red); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>🍁 Canada <span class="maple">ID</span></h1>
+    <p>
+      Unified Canadian AAMVA PDF417 barcode encoder, decoder, and card compositor.
+      All 13 provinces &amp; territories supported.
+    </p>
+    <div class="badge-row">
+      <img src="https://img.shields.io/github/actions/workflow/status/genXstark/canada-id/ci.yml?label=CI&style=flat-square" alt="CI status">
+      <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+">
+      <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
+    </div>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/genXstark/canada-id">GitHub Repository</a>
+      <a class="btn btn-secondary" href="https://github.com/genXstark/canada-id#readme">Documentation</a>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="card">
+      <span class="icon">📊</span>
+      <h3>Encode &amp; Decode</h3>
+      <p>Generate and read PDF417 barcodes following the AAMVA standard used on Canadian driver's licences.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🗂️</span>
+      <h3>Card Compositor</h3>
+      <p>Overlay barcodes onto card templates with precise placement and rotation controls.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🌐</span>
+      <h3>Web UI &amp; CLI</h3>
+      <p>Gradio-powered web interface plus a full-featured CLI. Desktop app available via PyInstaller.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🛡️</span>
+      <h3>Validation Engine</h3>
+      <p>Province-aware field validation catches data mismatches, format errors, and missing fields.</p>
+    </div>
+    <div class="card">
+      <span class="icon">📋</span>
+      <h3>MRZ Support</h3>
+      <p>Generate and parse Machine Readable Zone (TD1/TD2/TD3) strings from AAMVA data.</p>
+    </div>
+    <div class="card">
+      <span class="icon">📜</span>
+      <h3>Full Audit History</h3>
+      <p>Every operation is logged to a local SQLite database with timestamps, field data, and images.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Quick Start</h2>
+    <pre><code><span style="color:#888"># Install from source</span>
+pip install -e ".[web]"
+
+<span style="color:#888"># Launch the web UI</span>
+python -m gradio canada_id.web
+
+<span style="color:#888"># CLI: decode a barcode image</span>
+canada-id decode barcode.png --format json
+
+<span style="color:#888"># CLI: encode AAMVA data to barcode</span>
+canada-id encode --province ON --fields data.json -o barcode.png
+
+<span style="color:#888"># CLI: validate field data</span>
+canada-id validate --province AB --fields data.json
+
+<span style="color:#888"># CLI: generate MRZ</span>
+canada-id mrz --fields data.json --format TD1</code></pre>
+  </div>
+
+  <div class="section">
+    <h2>Supported Provinces &amp; Territories</h2>
+    <div class="provinces">
+      <div class="prov">🇨🇦 ON</div>
+      <div class="prov">🇨🇦 AB</div>
+      <div class="prov">🇨🇦 BC</div>
+      <div class="prov">🇨🇦 QC</div>
+      <div class="prov">🇨🇦 MB</div>
+      <div class="prov">🇨🇦 SK</div>
+      <div class="prov">🇨🇦 NS</div>
+      <div class="prov">🇨🇦 NB</div>
+      <div class="prov">🇨🇦 NL</div>
+      <div class="prov">🇨🇦 PE</div>
+      <div class="prov">🇨🇦 NT</div>
+      <div class="prov">🇨🇦 NU</div>
+      <div class="prov">🇨🇦 YT</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Project Structure</h2>
+    <pre><code>src/canada_id/
+├── aamva/          # AAMVA builder, parser, validator
+├── card/           # Card compositor &amp; layout
+├── codec/          # PDF417 encoder/decoder
+├── mrz/            # MRZ generation, parsing, OCR
+├── provinces/      # All 13 province profiles
+├── cli.py          # Click-based CLI
+├── guards.py       # Province mismatch detection
+├── storage.py      # SQLite audit history
+└── web.py          # Gradio web UI</code></pre>
+  </div>
+
+  <footer>
+    <p>
+      <strong>Canada ID</strong> &mdash;
+      <a href="https://github.com/genXstark/canada-id">Source on GitHub</a>
+    </p>
+  </footer>
+</body>
+</html>
