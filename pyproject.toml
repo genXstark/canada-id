@@ -2,7 +2,22 @@
 name = "canada-id"
 version = "0.1.0"
 description = "Unified Canadian AAMVA PDF417 barcode encoder, decoder, and card compositor"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { name = "genXstark" },
+]
+keywords = ["aamva", "pdf417", "barcode", "canada", "driver-licence"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+]
 dependencies = [
     "numpy>=1.24",
     "opencv-python-headless>=4.8",
@@ -12,10 +27,16 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["gradio>=4"]
-dev = ["pytest>=7", "ruff>=0.4", "coverage>=7"]
+dev = ["pytest>=7", "ruff>=0.4", "coverage>=7", "build>=1.0"]
+desktop = ["pywebview>=4", "pyinstaller>=6"]
 
 [project.scripts]
 canada-id = "canada_id.cli:main"
+
+[project.urls]
+Homepage = "https://genXstark.github.io/canada-id"
+Repository = "https://github.com/genXstark/canada-id"
+Issues = "https://github.com/genXstark/canada-id/issues"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -33,3 +54,14 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["canada_id"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
