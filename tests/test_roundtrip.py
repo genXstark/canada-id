@@ -1,4 +1,5 @@
 """Roundtrip tests: build AAMVA -> encode PDF417 -> decode -> parse -> assert."""
+
 import pytest
 
 from canada_id.aamva.builder import build_aamva
@@ -43,9 +44,7 @@ def test_roundtrip_preserves_all_nonempty_fields(sample_on_fields):
     parsed = _roundtrip(sample_on_fields, "ON")
     for key, val in sample_on_fields.items():
         if val:
-            assert parsed.get(key) == val, (
-                f"Field {key}: expected {val!r}, got {parsed.get(key)!r}"
-            )
+            assert parsed.get(key) == val, f"Field {key}: expected {val!r}, got {parsed.get(key)!r}"
 
 
 @pytest.mark.parametrize("province", [p.code for p in all_profiles()])

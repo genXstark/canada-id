@@ -1,8 +1,8 @@
 """Bridge to convert AAMVA field data to MRZ format."""
+
 from __future__ import annotations
 
 from canada_id.mrz.generator import MRZData
-
 
 SEX_MAP = {"1": "M", "2": "F", "9": "X"}
 

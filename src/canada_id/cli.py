@@ -1,4 +1,5 @@
 """CLI interface for canada-id barcode operations."""
+
 import json
 import sys
 
@@ -85,11 +86,17 @@ def encode(province: str, fields_path: str, output: str, scale: int):
     with open(fields_path) as f:
         fields = json.load(f)
 
+    from PIL import Image as PILImage
+
+    from canada_id.web import _barcode_size
+
     aamva_string = build_aamva(fields, province.upper())
     barcode = encode_pdf417(aamva_string)
     img = barcode_to_image(barcode, scale=scale)
+    w, h = _barcode_size(province.upper())
+    img = img.resize((w, h), PILImage.NEAREST)
     img.save(output)
-    click.echo(f"Barcode saved to {output}")
+    click.echo(f"Barcode saved to {output} ({w}x{h})")
 
 
 @main.command()
@@ -161,14 +168,21 @@ def composite(
         fields = json.load(f)
 
     profile = get_profile(province.upper())
+    from canada_id.web import _barcode_size
+
     aamva_string = build_aamva(fields, province.upper())
     barcode = encode_pdf417(aamva_string)
     barcode_img = barcode_to_image(barcode, scale=3)
+    w, h = _barcode_size(province.upper())
+    barcode_img = barcode_img.resize((w, h), Image.NEAREST)
 
     card_img = Image.open(template_path)
     region = BarcodeRegion(
-        x_frac=0.02, y_frac=0.05, w_frac=0.37,
-        h_frac=0.90, rotation_deg=-90.0,
+        x_frac=0.02,
+        y_frac=0.05,
+        w_frac=0.37,
+        h_frac=0.90,
+        rotation_deg=-90.0,
     )
 
     result = composite_barcode_on_card(card_img, barcode_img, region)
@@ -190,9 +204,7 @@ def provinces(province: str | None):
         if province:
             click.echo(f"  Date format: {p.date_format}")
             click.echo(f"  Height unit: {p.height_unit}")
-            classes = ", ".join(
-                f"{k}={v}" for k, v in p.vehicle_classes.items()
-            )
+            classes = ", ".join(f"{k}={v}" for k, v in p.vehicle_classes.items())
             click.echo(f"  Vehicle classes: {classes}")
 
 
@@ -236,25 +248,42 @@ def mrz(fields_path: str | None, mrz_format: str, output: str | None):
 
 @main.command()
 @click.argument("mrz_text")
-def parse_mrz_cmd(mrz_text: str):
-    """Parse and validate an MRZ string."""
-    from canada_id.mrz.parser import parse_mrz
+@click.option(
+    "--ocr-correct/--no-ocr-correct",
+    default=False,
+    help="Apply OCR error correction.",
+)
+def parse_mrz_cmd(mrz_text: str, ocr_correct: bool):
+    """Parse and validate an MRZ string (Canada-only)."""
+    from canada_id.mrz.parsers import MrzParseError, parse_mrz
 
     mrz_text = mrz_text.replace("\\n", "\n")
-    result = parse_mrz(mrz_text)
+    try:
+        result = parse_mrz(
+            mrz_text,
+            ocr_correct=ocr_correct,
+            canada_only=True,
+        )
+    except (MrzParseError, ValueError) as e:
+        click.echo(f"Parse error: {e}", err=True)
+        sys.exit(1)
 
-    click.echo(f"Format: {result.format_type}")
-    click.echo(f"Valid: {result.valid}")
+    click.echo(f"Format: {result.format.value}")
+    click.echo(f"Check digits valid: {result.check_digits_valid}")
     click.echo(f"Document Type: {result.document_type}")
-    click.echo(f"Country: {result.country_code}")
+    click.echo(f"Country: {result.issuing_country}")
     click.echo(f"Name: {result.surname}, {result.given_names}")
     click.echo(f"Doc Number: {result.document_number}")
+    click.echo(f"Nationality: {result.nationality}")
     click.echo(f"DOB: {result.date_of_birth}")
-    click.echo(f"Sex: {result.sex}")
+    click.echo(f"Sex: {result.sex.value}")
     click.echo(f"Expiry: {result.expiry_date}")
-    if result.errors:
-        for err in result.errors:
-            click.echo(f"  [ERROR] {err}")
+    if result.optional_data_1:
+        click.echo(f"Optional 1: {result.optional_data_1}")
+    if result.optional_data_2:
+        click.echo(f"Optional 2: {result.optional_data_2}")
+    if result.personal_number:
+        click.echo(f"Personal Number: {result.personal_number}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "canada-id",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-c", "from canada_id.web import create_app; app = create_app(); app.launch(share=False, server_port=7860)"],
+      "port": 7860
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 """Tests for AAMVA builder."""
+
 from canada_id.aamva.builder import build_aamva
 from canada_id.aamva.parser import parse_aamva
 

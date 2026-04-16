@@ -4,6 +4,7 @@ Auto-detects province from AAMVA field data and warns when
 the selected province doesn't match. Catches ADHD-friendly
 mistakes like selecting Alberta but entering Quebec data.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -90,16 +91,18 @@ def check_province_match(
     # Check DAJ (jurisdiction code)
     daj = fields.get("DAJ", "").strip().upper()
     if daj and len(daj) == 2 and daj != selected:
-        warnings.append(MismatchWarning(
-            field="DAJ",
-            expected=selected,
-            actual=daj,
-            message=(
-                f"Jurisdiction code is '{daj}' but you selected"
-                f" '{selected}'. Your data is for {daj}, not {selected}."
-            ),
-            severity="error",
-        ))
+        warnings.append(
+            MismatchWarning(
+                field="DAJ",
+                expected=selected,
+                actual=daj,
+                message=(
+                    f"Jurisdiction code is '{daj}' but you selected"
+                    f" '{selected}'. Your data is for {daj}, not {selected}."
+                ),
+                severity="error",
+            )
+        )
 
     # Check postal code prefix
     dak = fields.get("DAK", "").strip().upper()
@@ -108,43 +111,49 @@ def check_province_match(
         if first in _POSTAL_AMBIGUOUS:
             valid_provinces = _POSTAL_AMBIGUOUS[first]
             if selected not in valid_provinces:
-                warnings.append(MismatchWarning(
-                    field="DAK",
-                    expected=selected,
-                    actual=f"{first}... (matches {'/'.join(valid_provinces)})",
-                    message=(
-                        f"Postal code '{dak}' starts with '{first}'"
-                        f" which belongs to {'/'.join(valid_provinces)},"
-                        f" not {selected}."
-                    ),
-                    severity="error",
-                ))
+                warnings.append(
+                    MismatchWarning(
+                        field="DAK",
+                        expected=selected,
+                        actual=f"{first}... (matches {'/'.join(valid_provinces)})",
+                        message=(
+                            f"Postal code '{dak}' starts with '{first}'"
+                            f" which belongs to {'/'.join(valid_provinces)},"
+                            f" not {selected}."
+                        ),
+                        severity="error",
+                    )
+                )
         elif first in _POSTAL_TO_PROVINCE:
             postal_province = _POSTAL_TO_PROVINCE[first]
             if postal_province != selected:
-                warnings.append(MismatchWarning(
-                    field="DAK",
-                    expected=selected,
-                    actual=postal_province,
-                    message=(
-                        f"Postal code '{dak}' starts with '{first}'"
-                        f" which belongs to {postal_province},"
-                        f" not {selected}."
-                    ),
-                    severity="error",
-                ))
+                warnings.append(
+                    MismatchWarning(
+                        field="DAK",
+                        expected=selected,
+                        actual=postal_province,
+                        message=(
+                            f"Postal code '{dak}' starts with '{first}'"
+                            f" which belongs to {postal_province},"
+                            f" not {selected}."
+                        ),
+                        severity="error",
+                    )
+                )
 
     # Check DAI (city) — just a soft warning for known province capitals
     # if other checks already flagged issues
     dai = fields.get("DAI", "").strip().upper()
     if dai and daj and daj != selected and not warnings:
-        warnings.append(MismatchWarning(
-            field="DAI",
-            expected=selected,
-            actual=daj,
-            message=f"City '{dai}' appears to be in {daj}, not {selected}.",
-            severity="warning",
-        ))
+        warnings.append(
+            MismatchWarning(
+                field="DAI",
+                expected=selected,
+                actual=daj,
+                message=f"City '{dai}' appears to be in {daj}, not {selected}.",
+                severity="warning",
+            )
+        )
 
     return warnings
 

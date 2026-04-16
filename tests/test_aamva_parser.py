@@ -1,8 +1,6 @@
 """Tests for AAMVA parser."""
-import pytest
 
 from canada_id.aamva.parser import parse_aamva, parse_aamva_structured
-
 
 SAMPLE_AAMVA = (
     "@\n"
