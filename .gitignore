@@ -12,3 +12,4 @@ build/
 htmlcov/
 *.png
 !src/canada_id/templates/*.png
+.gradio/

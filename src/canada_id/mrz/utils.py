@@ -43,9 +43,15 @@ def split_names(text: str) -> tuple[str, str]:
 
 
 def encode_name(surname: str, given_names: str, length: int) -> str:
-    """Encode surname + given names into MRZ name field."""
-    surname_mrz = surname.upper().replace(" ", "<").replace("-", "<")
-    given_mrz = given_names.upper().replace(" ", "<").replace("-", "<")
+    """Encode surname + given names into MRZ name field.
+
+    Applies ICAO 9303 transliteration for accented characters
+    before encoding into MRZ-safe format.
+    """
+    from canada_id.mrz.transliterate import transliterate_name
+
+    surname_mrz = transliterate_name(surname).replace(" ", "<")
+    given_mrz = transliterate_name(given_names).replace(" ", "<")
     combined = surname_mrz + "<<" + given_mrz
     return pad(combined, length)
 
