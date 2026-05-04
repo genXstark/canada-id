@@ -9,7 +9,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CanadianDocType:
-    """Definition of a Canadian MRZ document type."""
+    """Definition of a Canadian MRZ document type.
+
+    Attributes (educational metadata):
+        card_eras: Historical card versions in circulation.
+        chip_type: Embedded chip technology, if any.
+        has_pdf417: Whether the card has a PDF417 barcode.
+        doc_number_formats: Accepted document number patterns.
+    """
 
     key: str
     name: str
@@ -29,6 +36,11 @@ class CanadianDocType:
     sample_expiry: str = "340115"
     sample_opt1: str = ""
     sample_opt2: str = ""
+    # Educational metadata (per ICAO/IRCC public spec)
+    card_eras: tuple = ()
+    chip_type: str = ""
+    has_pdf417: bool = False
+    doc_number_formats: tuple = ()
 
 
 CANADIAN_DOCS: dict[str, CanadianDocType] = {}
@@ -48,6 +60,7 @@ _reg(CanadianDocType(
     description=(
         "Canadian passport (TD3, 2x44). Standard passport"
         " issued by IRCC. Supports M/F/X gender."
+        " ePassport chip embedded since 1 July 2013."
     ),
     optional_data_1_label="Personal Number (14 chars max)",
     nationality_note="Always CAN for citizens",
@@ -58,24 +71,41 @@ _reg(CanadianDocType(
     sample_dob="850320",
     sample_sex="F",
     sample_expiry="340320",
+    card_eras=(
+        ("Pre-May 2023", "Doc# format: AB123456 (8 chars: 2 letters + 6 digits)"),
+        ("Post-May 2023", "Doc# format: A123456BC (9 chars: 1 letter + 6 digits + 2 letters)"),
+    ),
+    chip_type="ePassport (ISO 14443B, BAC, ICAO LDS) - since 2013-07-01",
+    has_pdf417=False,
+    doc_number_formats=(
+        r"^[A-Z]{2}\d{6}$",       # legacy
+        r"^[A-Z]\d{6}[A-Z]{2}$",  # current
+    ),
 ))
 
 _reg(CanadianDocType(
     key="pr_card",
     name="Permanent Resident Card",
     mrz_format="TD1",
-    document_type="I",
+    document_type="CA",
     issuing_country="CAN",
     description=(
         "Canadian PR Card (TD1, 3x30). Issued by IRCC."
+        " Doc type code is 'CA' (Canada-specific), NOT 'I<'."
         " Nationality may differ from issuing country"
         " (holder keeps their original nationality)."
+        " Three card eras with different security features."
     ),
-    optional_data_1_label="UCI / Client ID (15 chars)",
-    optional_data_2_label="Optional Data 2 (11 chars)",
+    optional_data_1_label=(
+        "UCI / Client ID with structure: <DDDDDDDDDD<<<X"
+        " (15 chars: < + 10-digit UCI + 3 fillers + 1 check)"
+    ),
+    optional_data_2_label=(
+        "Issue date + sequence: <YYMMDD<NN< (11 chars)"
+    ),
     nationality_note=(
         "Holder's actual nationality, NOT CAN."
-        " E.g. CMR, IND, CHN, PHL."
+        " E.g. BGD, CMR, IND, CHN, PHL."
     ),
     sample_surname="MAGHA MOFFO",
     sample_given="MATHILDE",
@@ -84,7 +114,21 @@ _reg(CanadianDocType(
     sample_dob="841127",
     sample_sex="F",
     sample_expiry="260430",
-    sample_opt1="1110153398",
+    sample_opt1="<1110153398<<<5",  # real format: <UCI<<<X
+    sample_opt2="<210430<01<",       # real format: <YYMMDD<NN<
+    card_eras=(
+        ("2002-2009", "Original. PDF417 barcode on back."),
+        ("2009-2014", "Redesigned. Optical stripe + PDF417 barcode."),
+        ("2015-present", "RFID chip (CBSA-only opaque ID). PDF417 REMOVED."),
+    ),
+    chip_type=(
+        "RFID (ISO 14443, opaque ID only) - 2015+ cards. "
+        "Read by CBSA at land borders only. NOT an ICAO ePassport chip."
+    ),
+    has_pdf417=False,  # post-2015 cards (current default)
+    doc_number_formats=(
+        r"^[A-Z]{2}\d{7}$",  # 2 letters + 7 digits
+    ),
 ))
 
 _reg(CanadianDocType(

@@ -12,6 +12,8 @@ import numpy as np
 import pytesseract
 from PIL import Image
 
+from canada_id.ai_agents.vision_ocr import extract_text_from_image_ai
+
 pytesseract.pytesseract.tesseract_cmd = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 )
@@ -239,8 +241,26 @@ def extract_mrz_from_image(
 ) -> str | None:
     """Extract MRZ text from a passport or PR card image.
 
-    Tries multiple strategies and picks the best result.
+    Tries AI Vision extraction first, then falls back to local Tesseract OCR
+    strategies and picks the best result.
     """
+    # 1. AI Vision Attempt
+    if isinstance(image, np.ndarray):
+        pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    else:
+        pil_image = image
+
+    ai_result = extract_text_from_image_ai(pil_image, extraction_type="MRZ")
+    if ai_result:
+        # AI often returns the perfect string, clean it just in case
+        lines = [line.strip().replace(" ", "") for line in ai_result.split("\n") if len(line.strip()) > 20]
+        assembled = _assemble_mrz(lines)
+        if assembled:
+            return assembled
+        # If assembly fails but we have AI text, just return the raw text cleaned up
+        return "\n".join(lines)
+
+    # 2. Local Tesseract Fallback
     if isinstance(image, Image.Image):
         img_array = np.array(image.convert("RGB"))
     else:

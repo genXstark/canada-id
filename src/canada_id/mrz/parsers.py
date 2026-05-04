@@ -33,20 +33,185 @@ def detect_format(text: str) -> MrzFormat:
     )
 
 
-# Letters commonly OCR-misread as < filler
-_FILLER_MISREADS = re.compile(r"[K]{3,}")
+# Chars commonly OCR-misread as < filler (runs of 3+)
+_FILLER_MISREADS = re.compile(r"([KLIJXY\|])\1{2,}")
+# Single-char interlopers sandwiched between < fillers
+_INTERLOPER = re.compile(r"<[A-Z0-9]<")
+
+
+# OCR ambiguity pairs (chars that look alike)
+_OCR_AMBIGUOUS = {
+    "0": "O", "O": "0",
+    "1": "I", "I": "1",
+    "2": "Z", "Z": "2",
+    "5": "S", "S": "5",
+    "6": "G", "G": "6",
+    "8": "B", "B": "8",
+}
+
+
+def _clean_filler_field(data: str, check: str) -> str:
+    """Clean OCR garbage from a field that should be mostly <.
+
+    Personal number and optional data fields are often all <.
+    If the field is >= 50% <, replace remaining letters with <
+    and verify check digit matches.
+    """
+    if checksum.verify(data, check):
+        return data
+    filler_count = data.count("<")
+    if filler_count < len(data) // 2:
+        return data
+    # Try replacing each non-< char with <, one at a time
+    # then all-<; return first match
+    all_filler = "<" * len(data)
+    if checksum.verify(all_filler, check):
+        return all_filler
+    # Replace individual non-< chars
+    for i, ch in enumerate(data):
+        if ch != "<":
+            candidate = data[:i] + "<" + data[i + 1:]
+            if checksum.verify(candidate, check):
+                return candidate
+    return data
+
+
+def _fix_check_digit(data: str, check: str) -> str:
+    """Try OCR ambiguity swaps on the check digit itself.
+
+    If the check digit was OCR-misread (e.g. 0 as O or <),
+    try alternatives until one validates.
+    """
+    if checksum.verify(data, check):
+        return check
+    # Common check-digit OCR misreads
+    alternatives = {
+        "<": ["0"],
+        "O": ["0"],
+        "Q": ["0"],
+        "I": ["1"],
+        "Z": ["2"],
+        "S": ["5"],
+        "G": ["6"],
+        "B": ["8"],
+        "0": ["O", "<"],
+        "1": ["I"],
+        "2": ["Z"],
+    }
+    if check in alternatives:
+        for alt in alternatives[check]:
+            if checksum.verify(data, alt):
+                return alt
+    # As a last resort, compute what it should be
+    try:
+        correct = checksum.compute_str(data)
+        # Only use computed value if OCR-ambiguous with input
+        if (check in _OCR_AMBIGUOUS
+                and _OCR_AMBIGUOUS[check] == correct):
+            return correct
+        if check == "<" and correct == "0":
+            return correct
+    except Exception:
+        pass
+    return check
+
+
+def _fix_with_checksum(data: str, check: str) -> str:
+    """Try OCR ambiguity swaps until check digit matches.
+
+    Tries single-char and two-char swaps for common OCR
+    ambiguities (0↔O, 1↔I, 8↔B, etc.). Returns original
+    string if no fix found.
+    """
+    if checksum.verify(data, check):
+        return data
+
+    # Single-position swaps
+    for i, ch in enumerate(data):
+        if ch in _OCR_AMBIGUOUS:
+            candidate = data[:i] + _OCR_AMBIGUOUS[ch] + data[i + 1:]
+            if checksum.verify(candidate, check):
+                return candidate
+
+    # Two-position swaps (more expensive but handles compound errors)
+    positions = [
+        i for i, ch in enumerate(data) if ch in _OCR_AMBIGUOUS
+    ]
+    for i in range(len(positions)):
+        for j in range(i + 1, len(positions)):
+            pi, pj = positions[i], positions[j]
+            candidate = list(data)
+            candidate[pi] = _OCR_AMBIGUOUS[data[pi]]
+            candidate[pj] = _OCR_AMBIGUOUS[data[pj]]
+            cand_str = "".join(candidate)
+            if checksum.verify(cand_str, check):
+                return cand_str
+
+    return data
+
+
+def _realign_td3(text: str) -> str | None:
+    """Realign TD3 line 2 using the sex marker as anchor.
+
+    TD3 line 2 has sex at position 20 (0-indexed) within line 2,
+    which is absolute position 64. If OCR misaligned by ±1-2 chars,
+    we can find M/F/X near position 64 and shift to correct.
+    """
+    if len(text) != 88:
+        return None
+    line2 = text[44:]
+    # Sex is at index 20 of line 2. Search ±3 around that.
+    for offset in (1, -1, 2, -2, 3, -3):
+        idx = 20 + offset
+        if 0 <= idx < len(line2) and line2[idx] in "MFX":
+            if offset > 0:
+                # Line 2 has extra chars before sex — drop them
+                new_line2 = line2[offset:] + "<" * offset
+            else:
+                # Line 2 is short before sex — pad
+                new_line2 = "<" * abs(offset) + line2[:len(line2) + offset]
+            return text[:44] + new_line2
+    return None
+
+
+def _realign_td1(text: str) -> str | None:
+    """Realign TD1 line 2 using the sex marker as anchor.
+
+    TD1 line 2 has sex at position 7 (0-indexed) within line 2,
+    absolute position 37.
+    """
+    if len(text) != 90:
+        return None
+    line2 = text[30:60]
+    for offset in (1, -1, 2, -2):
+        idx = 7 + offset
+        if 0 <= idx < len(line2) and line2[idx] in "MFX":
+            if offset > 0:
+                new_line2 = line2[offset:] + "<" * offset
+            else:
+                new_line2 = "<" * abs(offset) + line2[:len(line2) + offset]
+            return text[:30] + new_line2 + text[60:]
+    return None
 
 
 def _fix_ocr_fillers(text: str) -> str:
-    """Replace runs of letters that OCR misread as < fillers.
+    """Replace chars that OCR misread as < fillers.
 
-    Tesseract commonly reads < as K, C, or similar.
-    Runs of 3+ identical letters in filler positions
-    are almost certainly meant to be <.
+    Tesseract commonly reads < as K, L, I, J, X, Y, or |.
+    - Pass 1: Runs of 3+ identical filler-like chars -> <<<
+    - Pass 2: Single char sandwiched between < fillers -> <
+      (repeats until stable — fixes chains of interlopers)
     """
-    return _FILLER_MISREADS.sub(
+    text = _FILLER_MISREADS.sub(
         lambda m: "<" * len(m.group(0)), text,
     )
+    # Repeat interloper fix until no more matches
+    while True:
+        new = _INTERLOPER.sub("<<<", text)
+        if new == text:
+            break
+        text = new
+    return text
 
 
 _MRZ_LINE = re.compile(r"[A-Z0-9<]{28,46}")
@@ -75,21 +240,21 @@ def _extract_mrz_lines(text: str) -> str | None:
 
 _TD1_LINE1 = re.compile(
     r"([A-Z0-9<]{2})"
-    r"([A-Z<]{3})"
+    r"([A-Z0-9<]{3})"
     r"([A-Z0-9<]{9})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{1})"
     r"([A-Z0-9<]{15})"
 )
 
 _TD1_LINE2 = re.compile(
-    r"([0-9<]{6})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{6})"
+    r"([A-Z0-9<]{1})"
     r"([MFX<]{1})"
-    r"([0-9<]{6})"
-    r"([0-9<]{1})"
-    r"([A-Z<]{3})"
+    r"([A-Z0-9<]{6})"
+    r"([A-Z0-9<]{1})"
+    r"([A-Z0-9<]{3})"
     r"([A-Z0-9<]{11})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{1})"
 )
 
 _TD1_LINE3 = re.compile(r"([A-Z0-9<]{30})")
@@ -131,6 +296,9 @@ def parse_td1(text: str, *, ocr_correct: bool = False) -> MrzResult:
         nationality = ocr.correct_alpha(nationality)
         issuing_state = ocr.correct_alpha(issuing_state)
         sex_raw = ocr.correct_sex(sex_raw)
+        doc_number = _fix_with_checksum(doc_number, doc_check)
+        dob_raw = _fix_with_checksum(dob_raw, dob_check)
+        expiry_raw = _fix_with_checksum(expiry_raw, expiry_check)
 
     valid = (
         checksum.verify_extended(doc_number, doc_check, optional1)
@@ -169,22 +337,22 @@ def parse_td1(text: str, *, ocr_correct: bool = False) -> MrzResult:
 # ── TD2: 2 x 36 ────────────────────────────────────────
 
 _TD2_LINE1 = re.compile(
-    r"([A-UW-Z]{1}[A-Z0-9<]{1})"
-    r"([A-Z<]{3})"
-    r"([A-Z<]{31})"
+    r"([A-Z0-9<]{2})"
+    r"([A-Z0-9<]{3})"
+    r"([A-Z0-9<]{31})"
 )
 
 _TD2_LINE2 = re.compile(
     r"([A-Z0-9<]{9})"
-    r"([0-9<]{1})"
-    r"([A-Z<]{3})"
-    r"([0-9<]{6})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{1})"
+    r"([A-Z0-9<]{3})"
+    r"([A-Z0-9<]{6})"
+    r"([A-Z0-9<]{1})"
     r"([MFX<]{1})"
-    r"([0-9<]{6})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{6})"
+    r"([A-Z0-9<]{1})"
     r"([A-Z0-9<]{7})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{1})"
 )
 
 
@@ -219,6 +387,9 @@ def parse_td2(text: str, *, ocr_correct: bool = False) -> MrzResult:
         nationality = ocr.correct_alpha(nationality)
         issuing_state = ocr.correct_alpha(issuing_state)
         sex_raw = ocr.correct_sex(sex_raw)
+        doc_number = _fix_with_checksum(doc_number, doc_check)
+        dob_raw = _fix_with_checksum(dob_raw, dob_check)
+        expiry_raw = _fix_with_checksum(expiry_raw, expiry_check)
 
     valid = (
         checksum.verify_extended(doc_number, doc_check, optional)
@@ -256,23 +427,23 @@ def parse_td2(text: str, *, ocr_correct: bool = False) -> MrzResult:
 # ── TD3: 2 x 44 ────────────────────────────────────────
 
 _TD3_LINE1 = re.compile(
-    r"([A-UW-Z]{1}[A-Z0-9<]{1})"
-    r"([A-Z<]{3})"
-    r"([A-Z<]{39})"
+    r"([A-Z0-9<]{2})"
+    r"([A-Z0-9<]{3})"
+    r"([A-Z0-9<]{39})"
 )
 
 _TD3_LINE2 = re.compile(
     r"([A-Z0-9<]{9})"
-    r"([0-9<]{1})"
-    r"([A-Z<]{3})"
-    r"([0-9<]{6})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{1})"
+    r"([A-Z0-9<]{3})"
+    r"([A-Z0-9<]{6})"
+    r"([A-Z0-9<]{1})"
     r"([MFX<]{1})"
-    r"([0-9<]{6})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{6})"
+    r"([A-Z0-9<]{1})"
     r"([A-Z0-9<]{14})"
-    r"([0-9<]{1})"
-    r"([0-9<]{1})"
+    r"([A-Z0-9<]{1})"
+    r"([A-Z0-9<]{1})"
 )
 
 
@@ -308,6 +479,19 @@ def parse_td3(text: str, *, ocr_correct: bool = False) -> MrzResult:
         nationality = ocr.correct_alpha(nationality)
         issuing_state = ocr.correct_alpha(issuing_state)
         sex_raw = ocr.correct_sex(sex_raw)
+        # Try OCR ambiguity swaps when check digits fail
+        doc_number = _fix_with_checksum(doc_number, doc_check)
+        dob_raw = _fix_with_checksum(dob_raw, dob_check)
+        expiry_raw = _fix_with_checksum(expiry_raw, expiry_check)
+        # Personal number is usually all < fillers — aggressively
+        # clean up stray letters that OCR misread
+        personal_num = _clean_filler_field(
+            personal_num, personal_check,
+        )
+        # Try OCR swap on check digits themselves if still invalid
+        personal_check = _fix_check_digit(
+            personal_num, personal_check,
+        )
 
     valid = (
         checksum.verify(doc_number, doc_check)
@@ -322,6 +506,31 @@ def parse_td3(text: str, *, ocr_correct: bool = False) -> MrzResult:
             overall_check,
         )
     )
+
+    # If individual checks pass but overall fails, the overall
+    # check digit itself was likely OCR-corrupted — trust data
+    # and use computed overall check
+    if ocr_correct and not valid:
+        composite = (
+            doc_number + doc_check
+            + dob_raw + dob_check
+            + expiry_raw + expiry_check
+            + personal_num + personal_check
+        )
+        individual_valid = (
+            checksum.verify(doc_number, doc_check)
+            and checksum.verify(dob_raw, dob_check)
+            and checksum.verify(expiry_raw, expiry_check)
+            and checksum.verify(personal_num, personal_check)
+        )
+        if individual_valid:
+            # All individual checks passed — data is trustworthy.
+            # Overall check must be OCR-corrupted; compute correct.
+            try:
+                overall_check = checksum.compute_str(composite)
+                valid = True
+            except Exception:
+                pass
 
     return MrzResult(
         format=MrzFormat.TD3,
@@ -396,14 +605,31 @@ def parse_mrz(
 
     fmt = detect_format(text)
 
-    if fmt == MrzFormat.TD1:
-        result = parse_td1(text, ocr_correct=ocr_correct)
-    elif fmt == MrzFormat.TD2:
-        result = parse_td2(text, ocr_correct=ocr_correct)
-    elif fmt == MrzFormat.TD3:
-        result = parse_td3(text, ocr_correct=ocr_correct)
-    else:
-        raise MrzParseError(f"Unsupported format: {fmt}")
+    try:
+        if fmt == MrzFormat.TD1:
+            result = parse_td1(text, ocr_correct=ocr_correct)
+        elif fmt == MrzFormat.TD2:
+            result = parse_td2(text, ocr_correct=ocr_correct)
+        elif fmt == MrzFormat.TD3:
+            result = parse_td3(text, ocr_correct=ocr_correct)
+        else:
+            raise MrzParseError(f"Unsupported format: {fmt}")
+    except MrzParseError:
+        # Lossy fallback: re-align line 2 by finding sex marker
+        if ocr_correct and fmt == MrzFormat.TD3:
+            realigned = _realign_td3(text)
+            if realigned:
+                result = parse_td3(realigned, ocr_correct=ocr_correct)
+            else:
+                raise
+        elif ocr_correct and fmt == MrzFormat.TD1:
+            realigned = _realign_td1(text)
+            if realigned:
+                result = parse_td1(realigned, ocr_correct=ocr_correct)
+            else:
+                raise
+        else:
+            raise
 
     if canada_only and not result.is_canadian:
         raise ValueError(

@@ -72,6 +72,69 @@ _HONORIFICS = {
     "DR", "MR", "MRS", "MS", "MISS", "SIR", "DAME",
     "PROF", "REV", "HON", "CAPT", "SGT", "CPL",
 }
+# IRCC UCI / Client ID — 8 digits or 10 digits, optional dashes
+# 0000-0000 (8) or 00-0000-0000 (10)
+_UCI_RE = re.compile(r"^(\d{4}-?\d{4}|\d{2}-?\d{4}-?\d{4})$")
+# Canadian passport doc# — both formats per IRCC May 2023 redesign
+_PASSPORT_LEGACY = re.compile(r"^[A-Z]{2}\d{6}$")
+_PASSPORT_NEW = re.compile(r"^[A-Z]\d{6}[A-Z]{2}$")
+# PR card doc# — 2 letters + 7 digits (per Wikipedia + IRCC samples)
+_PR_CARD_DOC_RE = re.compile(r"^[A-Z]{2}\d{7}$")
+
+
+def validate_uci(uci: str) -> tuple[bool, str]:
+    """Validate IRCC UCI / Client ID.
+
+    Accepts 8-digit (0000-0000) or 10-digit (00-0000-0000) format,
+    with or without dashes.
+
+    Returns:
+        (valid, message) tuple. message empty on valid.
+    """
+    if not uci:
+        return False, "UCI is empty"
+    cleaned = uci.replace(" ", "").upper()
+    if not _UCI_RE.match(cleaned):
+        return False, (
+            f"Invalid UCI format. Expected 8 digits (0000-0000) or"
+            f" 10 digits (00-0000-0000), got '{uci}'"
+        )
+    return True, ""
+
+
+def validate_passport_number(num: str) -> tuple[bool, str]:
+    """Validate Canadian passport document number.
+
+    Accepts both pre-May 2023 (AB123456, 8 chars) and post-May 2023
+    (A123456BC, 9 chars) formats.
+    """
+    if not num:
+        return False, "Passport number is empty"
+    cleaned = num.replace(" ", "").upper()
+    if _PASSPORT_LEGACY.match(cleaned):
+        return True, "Legacy format (pre-May 2023)"
+    if _PASSPORT_NEW.match(cleaned):
+        return True, "Current format (post-May 2023)"
+    return False, (
+        f"Invalid passport number. Expected 'AB123456' (legacy) or"
+        f" 'A123456BC' (current), got '{num}'"
+    )
+
+
+def validate_pr_card_number(num: str) -> tuple[bool, str]:
+    """Validate Canadian PR card document number.
+
+    Format: 2 uppercase letters followed by 7 digits.
+    """
+    if not num:
+        return False, "PR card number is empty"
+    cleaned = num.replace(" ", "").upper()
+    if _PR_CARD_DOC_RE.match(cleaned):
+        return True, ""
+    return False, (
+        f"Invalid PR card number. Expected 2 letters + 7 digits"
+        f" (e.g. PD0183017), got '{num}'"
+    )
 
 
 def validate_mrz_fields(

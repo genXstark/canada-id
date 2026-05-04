@@ -9,8 +9,14 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 
 # Collect all Gradio data files (templates, static assets)
-gradio_datas = collect_data_files("gradio")
-gradio_client_datas = collect_data_files("gradio_client")
+# include_py_files=True: Gradio reads its own .py files at runtime
+# for pyi stub generation (component_meta.create_or_modify_pyi)
+gradio_datas = collect_data_files("gradio", include_py_files=True)
+gradio_client_datas = collect_data_files(
+    "gradio_client", include_py_files=True,
+)
+safehttpx_datas = collect_data_files("safehttpx")
+groovy_datas = collect_data_files("groovy", include_py_files=False)
 
 # Collect hidden imports
 hidden_imports = (
@@ -18,12 +24,14 @@ hidden_imports = (
     + collect_submodules("gradio_client")
     + collect_submodules("webview")
     + collect_submodules("canada_id")
+    + collect_submodules("safehttpx")
     + [
         "PIL", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont",
         "cv2", "numpy", "click",
         "clr_loader", "pythonnet",
         "engineio", "socketio",
         "multipart",
+        "safehttpx",
     ]
 )
 
@@ -31,7 +39,7 @@ a = Analysis(
     ["desktop.py"],
     pathex=["src"],
     binaries=[],
-    datas=gradio_datas + gradio_client_datas,
+    datas=gradio_datas + gradio_client_datas + safehttpx_datas + groovy_datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
@@ -50,7 +58,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Canada ID",
+    name="moviepropIDgen",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -67,5 +75,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="Canada ID",
+    name="moviepropIDgen",
 )

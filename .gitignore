@@ -13,3 +13,5 @@ htmlcov/
 *.png
 !src/canada_id/templates/*.png
 .gradio/
+*.bak
+pr_pages/

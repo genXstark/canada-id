@@ -1,4 +1,4 @@
-"""Desktop launcher for Canada ID.
+"""Desktop launcher for moviepropIDgen.
 
 Opens the Gradio app in a native Windows window using pywebview.
 No browser needed — runs as a standalone desktop application.
@@ -8,6 +8,11 @@ import time
 import socket
 
 import webview
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional local convenience
+    load_dotenv = None
 
 from canada_id.web import create_app
 
@@ -40,6 +45,9 @@ def _run_gradio(port: int):
 
 def main():
     """Launch the desktop application."""
+    if load_dotenv is not None:
+        load_dotenv()
+
     port = _find_free_port()
 
     server_thread = threading.Thread(
@@ -55,7 +63,7 @@ def main():
         time.sleep(0.5)
 
     webview.create_window(
-        "Canada ID - AAMVA Barcode Tool",
+        "moviepropIDgen",
         f"http://127.0.0.1:{port}",
         width=1200,
         height=800,

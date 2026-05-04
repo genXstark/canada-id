@@ -13,9 +13,21 @@ dependencies = [
 [project.optional-dependencies]
 web = ["gradio>=4"]
 dev = ["pytest>=7", "ruff>=0.4", "coverage>=7"]
+desktop = ["gradio>=4", "pywebview>=5.1", "python-dotenv>=1.0"]
+# External library versions (for compatibility with external scripts)
+external = [
+    "mrz>=0.6.2",
+    "pdf417gen>=0.7.1", 
+    "python-barcode>=0.15.1",
+    "qrcode>=7.4.2",
+    "pypng>=0.0.21",
+]
 
 [project.scripts]
 canada-id = "canada_id.cli:main"
+canada-id-web = "canada_id.web:launch"
+canada-id-desktop = "desktop:main"
+canada-id-local = "canada_id.start_local:main"
 
 [build-system]
 requires = ["setuptools>=68"]

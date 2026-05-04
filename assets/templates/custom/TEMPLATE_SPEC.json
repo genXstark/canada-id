@@ -1,0 +1,29 @@
+{
+  "template_name": "my_pr_template_v1",
+  "document_type": "pr_card",
+  "image_path": "assets/templates/custom/pr_card_front.png",
+  "notes": "Put your template image in this folder and fill this file.",
+  "card_size_px": {
+    "width": 1011,
+    "height": 637
+  },
+  "zones": {
+    "photo": {"x": 690, "y": 52, "w": 245, "h": 320},
+    "surname": {"x": 45, "y": 90},
+    "given_names": {"x": 45, "y": 145},
+    "dob": {"x": 45, "y": 220},
+    "sex": {"x": 300, "y": 220},
+    "pr_number": {"x": 45, "y": 280},
+    "mrz": {"x": 20, "y": 398, "w": 971, "h": 220}
+  },
+  "fonts": {
+    "title_size": 26,
+    "label_size": 16,
+    "value_size": 22,
+    "mrz_size": 20
+  },
+  "colors": {
+    "text": "#111111",
+    "mrz_text": "#000000"
+  }
+}

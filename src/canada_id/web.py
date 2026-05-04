@@ -1,14 +1,64 @@
 """Gradio web UI for canada-id barcode encoding and decoding."""
 import json
+import os
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from urllib import error, request
 
 import gradio as gr
-from PIL import Image
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
+from canada_id.ai_config import provider_status_markdown
 from canada_id.guards import auto_fix_province, check_province_match
+from canada_id.mrz_guide import get_mrz_guide_html
 from canada_id.provinces.registry import all_profiles, get_profile
+from canada_id.sample_store import PRSampleStore
 from canada_id.storage import HistoryDB
 
 _db = HistoryDB()
+_pr_store = PRSampleStore()
+
+_BUILTIN_PR_SAMPLES: dict[str, dict[str, str]] = {
+    "builtin:PR Basic Canada": {
+        "document_type": "I",
+        "country_code": "CAN",
+        "document_number": "R12345678",
+        "surname": "SMITH",
+        "given_names": "JOHN ALEXANDER",
+        "nationality": "CAN",
+        "date_of_birth": "950523",
+        "sex": "M",
+        "expiry_date": "290523",
+        "country_of_birth": "CANADA",
+        "pr_number": "123456789",
+        "optional_data_1": "PR1234567",
+    },
+    "builtin:PR Female Example": {
+        "document_type": "I",
+        "country_code": "CAN",
+        "document_number": "R87654321",
+        "surname": "TREMBLAY",
+        "given_names": "MARIE CLAIRE",
+        "nationality": "CAN",
+        "date_of_birth": "900215",
+        "sex": "F",
+        "expiry_date": "300215",
+        "country_of_birth": "CANADA",
+        "pr_number": "987654321",
+        "optional_data_1": "PR9876543",
+    },
+}
+
+
+@dataclass(frozen=True)
+class EditPlan:
+    """Simple image enhancement plan."""
+
+    brightness: float
+    contrast: float
+    color: float
+    sharpness: float
 
 
 def _province_choices() -> list[str]:
@@ -21,10 +71,23 @@ def _extract_code(choice: str) -> str:
     return choice.split(" - ")[0].strip().upper() if choice else ""
 
 
-# Province-specific PDF417 barcode dimensions (width, height).
-# Ontario uses a wider barcode than others.
+# Province-specific PDF417 barcode dimensions (width, height) in pixels.
+# Sizes derived from public spec sheets and AAMVA test card observations.
+# Provinces marked "default" use the AAMVA reference 404x82.
 _BARCODE_SIZES: dict[str, tuple[int, int]] = {
-    "ON": (805, 116),
+    "ON": (805, 116),  # Confirmed: Ontario DL/photocard wider format
+    "BC": (640, 130),  # BC Services Card / DL standard
+    "AB": (565, 110),  # Alberta DL standard
+    "QC": (605, 130),  # Quebec permis de conduire standard
+    "MB": (485, 95),   # Manitoba DL standard
+    "SK": (485, 95),   # Saskatchewan DL standard
+    "NS": (450, 90),   # Nova Scotia DL standard
+    "NB": (450, 90),   # New Brunswick DL standard
+    "NL": (450, 90),   # Newfoundland DL standard
+    "PE": (404, 82),   # Prince Edward Island - AAMVA default
+    "NT": (404, 82),   # Northwest Territories - AAMVA default
+    "NU": (404, 82),   # Nunavut - AAMVA default
+    "YT": (404, 82),   # Yukon - AAMVA default
 }
 _DEFAULT_BARCODE_SIZE = (404, 82)
 
@@ -354,6 +417,46 @@ def _doc_type_choices() -> list[str]:
     return doc_choices()
 
 
+def _show_doc_info(doc_choice: str) -> str:
+    """Show educational info for selected doc type: eras, chip, doc# format."""
+    from canada_id.mrz.canada_docs import CANADIAN_DOCS
+
+    if not doc_choice:
+        return (
+            "Select a template to see card era, chip type, and"
+            " document number format details."
+        )
+    key = doc_choice.split(" - ")[0].strip()
+    doc = CANADIAN_DOCS.get(key)
+    if not doc:
+        return "Unknown template."
+
+    lines = [f"**{doc.name}** ({doc.mrz_format}, {doc.issuing_country})"]
+    if doc.card_eras:
+        lines.append("")
+        lines.append("**Card eras:**")
+        for era, note in doc.card_eras:
+            lines.append(f"- *{era}* — {note}")
+    if doc.chip_type:
+        lines.append("")
+        lines.append(f"**Chip:** {doc.chip_type}")
+    if doc.doc_number_formats:
+        lines.append("")
+        lines.append("**Doc number formats accepted:**")
+        for fmt in doc.doc_number_formats:
+            lines.append(f"- `{fmt}`")
+    if doc.has_pdf417:
+        lines.append("")
+        lines.append("**Barcode:** Has PDF417")
+    elif doc.mrz_format == "TD1":
+        lines.append("")
+        lines.append("**Barcode:** None (post-2015 PR cards)")
+    if doc.nationality_note:
+        lines.append("")
+        lines.append(f"**Nationality:** {doc.nationality_note}")
+    return "\n".join(lines)
+
+
 def _load_doc_template(doc_choice: str):
     """Load sample fields for a Canadian document type."""
     from canada_id.mrz.canada_docs import CANADIAN_DOCS
@@ -397,6 +500,95 @@ def _clean_mrz_field(value: str, field_name: str) -> str:
     import re
     cleaned = re.sub(r"[^A-Za-z0-9<]", "", cleaned)
     return cleaned.upper()
+
+
+def _mrz_load_from_json(json_text: str):
+    """Parse JSON payload and return MRZ form field tuple.
+
+    Accepts the same field names as the example payload, e.g.:
+      {
+        "Document Type": "P",
+        "MRZ Format": "TD3",
+        "Issuing Country": "CAN",
+        "Document Number": "AB123456",
+        "Surname": "RAHMAN",
+        "Given Names": "BADR",
+        "Nationality": "CAN",
+        "Sex": "M",
+        "Date of Birth": "970614",
+        "Expiry Date": "280701",
+        "Optional Data 1": "",
+        "Issuing Authority": "GATINEAU"   # ignored, not in MRZ
+      }
+    Status output notes any extraneous keys (like Issuing Authority).
+    """
+    if not json_text or not json_text.strip():
+        return (
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            "Paste a JSON payload first.",
+        )
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError as e:
+        return (
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(),
+            f"Invalid JSON: {e}",
+        )
+
+    # Map JSON keys to form fields (accept multiple casings)
+    def g(*keys, default=""):
+        for k in keys:
+            if k in data:
+                return str(data[k])
+        return default
+
+    doc_type = g("Document Type", "document_type", default="I")
+    mrz_format = g("MRZ Format", "mrz_format", default="TD1")
+    country = g("Issuing Country", "country_code", "country", default="CAN")
+    surname = g("Surname", "surname")
+    given = g("Given Names", "given_names", "given")
+    doc_num = g("Document Number", "document_number", "doc_num")
+    nationality = g("Nationality", "nationality", default="CAN")
+    dob = g("Date of Birth", "date_of_birth", "dob")
+    sex = g("Sex", "sex", default="M")
+    expiry = g("Expiry Date", "expiry_date", "expiry")
+    opt1 = g("Optional Data 1", "optional_data_1", "opt1")
+    opt2 = g("Optional Data 2", "optional_data_2", "opt2")
+
+    # Detect non-MRZ fields and warn
+    non_mrz_keys = [
+        k for k in data
+        if k in ("Issuing Authority", "issuing_authority",
+                 "Place of Birth", "place_of_birth",
+                 "Photo", "photo", "Signature", "signature")
+    ]
+    note = ""
+    if non_mrz_keys:
+        note = (
+            f" Note: ignored non-MRZ field(s): {', '.join(non_mrz_keys)}"
+            f" (printed on document but not in MRZ)."
+        )
+    return (
+        doc_type[:1].upper() if doc_type else "I",
+        mrz_format.upper() if mrz_format else "TD1",
+        country.upper(),
+        surname.upper(),
+        given.upper(),
+        doc_num.upper(),
+        nationality.upper(),
+        dob,
+        sex.upper()[:1] if sex else "M",
+        expiry,
+        opt1,
+        opt2,
+        f"Loaded {surname.upper()}, {given.upper()}.{note}",
+    )
 
 
 def _mrz_generate(
@@ -524,9 +716,94 @@ def _mrz_scan_image(image):
         status = f"Extracted and parsed. Check digits: {valid}"
         return display, parsed, status
     except MrzParseError as e:
-        return display, "", f"Extracted MRZ but parse failed: {e}"
+        # Best-effort fallback: extract what we can so the user
+        # can still click Fill from Scan and fix manually
+        parsed = _best_effort_extract(mrz_text)
+        status = (
+            f"Parse failed ({e}). Showing best-effort fields"
+            f" — edit and re-parse or click Fill from Scan."
+        )
+        return display, parsed, status
     except ValueError as e:
-        return display, "", f"Extracted but validation failed: {e}"
+        parsed = _best_effort_extract(mrz_text)
+        return display, parsed, f"Validation failed: {e}"
+
+
+def _best_effort_extract(mrz_text: str) -> str:
+    """Extract whatever fields we can from corrupted MRZ text.
+
+    Uses landmark scanning (sex marker, known positions) rather
+    than strict regex. Always returns parseable field text for
+    Fill from Scan to consume.
+    """
+    from canada_id.mrz.utils import lines_from_mrz, split_names
+
+    lines = lines_from_mrz(mrz_text)
+    if not lines:
+        return ""
+
+    fields = {
+        "Format": "TD3" if len(lines) == 2 else "TD1",
+        "Check digits valid": "False",
+        "Document Type": "P" if len(lines) == 2 else "I",
+        "Country": "CAN",
+        "Surname": "",
+        "Given Names": "",
+        "Document Number": "",
+        "Nationality": "CAN",
+        "DOB": "",
+        "Sex": "M",
+        "Expiry": "",
+        "Optional 1": "",
+        "Optional 2": "",
+    }
+
+    line1 = lines[0] if lines else ""
+    line2 = lines[1] if len(lines) > 1 else ""
+    line3 = lines[2] if len(lines) > 2 else ""
+
+    # Line 1: doc type + country + name field
+    if len(line1) >= 5:
+        fields["Document Type"] = line1[0] if line1[0] in "PIAC" else "P"
+        fields["Country"] = line1[2:5]
+
+    # Name field: differs by format
+    if len(lines) == 2 and len(line1) >= 44:
+        # TD3: name in line 1 positions 5-44
+        name_field = line1[5:44]
+        surname, given = split_names(name_field)
+        fields["Surname"] = surname or ""
+        fields["Given Names"] = given or ""
+    elif len(lines) == 3 and len(line3) >= 30:
+        # TD1: name in line 3
+        surname, given = split_names(line3)
+        fields["Surname"] = surname or ""
+        fields["Given Names"] = given or ""
+
+    # Line 2: data fields — use sex marker as anchor
+    if line2:
+        sex_idx = -1
+        for i, ch in enumerate(line2):
+            if ch in "MFX" and 15 <= i <= 25:
+                sex_idx = i
+                break
+        if sex_idx > 0:
+            fields["Sex"] = line2[sex_idx]
+            # Dates relative to sex position
+            if sex_idx >= 7:
+                # dob is 7 chars before sex (6 digits + 1 check)
+                dob_raw = line2[sex_idx - 7:sex_idx - 1]
+                fields["DOB"] = dob_raw
+            if sex_idx + 7 <= len(line2):
+                expiry_raw = line2[sex_idx + 1:sex_idx + 7]
+                fields["Expiry"] = expiry_raw
+            # Doc number is first 9 chars of line 2
+            fields["Document Number"] = line2[:9].replace("<", "")
+            # Nationality is typically 3 chars before dob
+            if sex_idx >= 10:
+                fields["Nationality"] = line2[sex_idx - 10:sex_idx - 7]
+
+    return "\n".join(f"{k}: {v}" for k, v in fields.items() if v)
 
 
 def _mrz_fill_from_scan(scan_parsed):
@@ -607,9 +884,52 @@ def _mrz_parse_text(mrz_text, ocr_correct):
         valid = "VALID" if result.check_digits_valid else "INVALID"
         return parsed, f"Check digits: {valid}"
     except MrzParseError as e:
-        return "", f"Parse error: {e}"
+        parsed = _best_effort_extract(mrz_text.strip())
+        return parsed, (
+            f"Parse failed ({e}). Showing best-effort fields"
+            f" — click Fill from Paste to use them."
+        )
     except ValueError as e:
-        return "", f"Validation error: {e}"
+        parsed = _best_effort_extract(mrz_text.strip())
+        return parsed, f"Validation failed: {e}"
+
+
+def _mrz_export_txt(generated, parsed, status):
+    """Export MRZ results as plain text."""
+    lines = ["=== MRZ Export ===", ""]
+    if generated:
+        lines.append("GENERATED MRZ:")
+        lines.append(generated)
+        lines.append("")
+    if parsed:
+        lines.append("PARSED FIELDS:")
+        lines.append(parsed)
+        lines.append("")
+    if status:
+        lines.append(f"STATUS: {status}")
+    if not generated and not parsed:
+        return "Nothing to export. Generate or scan first."
+    return "\n".join(lines)
+
+
+def _mrz_export_json(generated, parsed, status):
+    """Export MRZ results as JSON."""
+    data = {}
+    if generated:
+        data["mrz_raw"] = generated.replace("\n", "")
+        data["mrz_lines"] = generated.strip().split("\n")
+    if parsed:
+        fields = {}
+        for line in parsed.strip().split("\n"):
+            if ":" in line:
+                key, val = line.split(":", 1)
+                fields[key.strip()] = val.strip()
+        data["fields"] = fields
+    if status:
+        data["status"] = status
+    if not data:
+        return '{"error": "Nothing to export"}'
+    return json.dumps(data, indent=2)
 
 
 def _mrz_compare(generated_mrz, scanned_mrz):
@@ -644,12 +964,390 @@ def _mrz_compare(generated_mrz, scanned_mrz):
     return "\n".join(lines)
 
 
+def _default_pr_fields() -> str:
+    """Return starter fields for a PR card."""
+    sample = {
+        "document_type": "I",
+        "country_code": "CAN",
+        "document_number": "R12345678",
+        "surname": "SMITH",
+        "given_names": "JOHN ALEXANDER",
+        "nationality": "CAN",
+        "date_of_birth": "950523",
+        "sex": "M",
+        "expiry_date": "290523",
+        "country_of_birth": "CANADA",
+        "pr_number": "123456789",
+        "optional_data_1": "PR1234567",
+    }
+    return json.dumps(sample, indent=2)
+
+
+def _default_passport_fields() -> str:
+    """Return starter fields for a passport."""
+    sample = {
+        "document_type": "P",
+        "country_code": "CAN",
+        "document_number": "AB1234567",
+        "surname": "SMITH",
+        "given_names": "JOHN ALEXANDER",
+        "nationality": "CAN",
+        "date_of_birth": "950523",
+        "sex": "M",
+        "expiry_date": "320523",
+        "passport_no": "AB1234567",
+        "date_of_issue": "220523",
+        "place_of_birth": "TORONTO",
+    }
+    return json.dumps(sample, indent=2)
+
+
+def _document_defaults(doc_kind: str) -> str:
+    """Return default JSON for a selected document type."""
+    if doc_kind == "Passport":
+        return _default_passport_fields()
+    return _default_pr_fields()
+
+
+def _pr_sample_choices() -> list[str]:
+    """Return saved PR sample names."""
+    return list(_BUILTIN_PR_SAMPLES.keys()) + _pr_store.list_names()
+
+
+def _refresh_pr_samples():
+    """Refresh PR sample dropdown choices."""
+    names = _pr_sample_choices()
+    value = names[0] if names else None
+    return gr.update(choices=names, value=value)
+
+
+def _load_pr_sample(sample_name: str):
+    """Load a saved PR sample into the editor."""
+    if not sample_name:
+        return _default_pr_fields(), "Select a saved PR sample first."
+    if sample_name in _BUILTIN_PR_SAMPLES:
+        return (
+            json.dumps(_BUILTIN_PR_SAMPLES[sample_name], indent=2),
+            f"Loaded built-in PR template '{sample_name}'.",
+        )
+    fields = _pr_store.load(sample_name)
+    if not fields:
+        return _default_pr_fields(), f"No saved PR sample named '{sample_name}'."
+    return json.dumps(fields, indent=2), f"Loaded PR sample '{sample_name}'."
+
+
+def _save_pr_sample(sample_name: str, fields_json: str):
+    """Save the current PR fields as a reusable sample."""
+    if not sample_name or not sample_name.strip():
+        return _refresh_pr_samples(), "Enter a sample name first."
+    try:
+        fields = json.loads(fields_json)
+    except json.JSONDecodeError as exc:
+        return _refresh_pr_samples(), f"Invalid JSON: {exc}"
+
+    _pr_store.save(sample_name.strip(), fields)
+    updated = _refresh_pr_samples()
+    return updated, f"Saved PR sample '{sample_name.strip()}'."
+
+
+def _document_provider_status() -> str:
+    """Return a non-sensitive summary of local provider configuration."""
+    return provider_status_markdown()
+
+
+def _to_pil_image(image_value):
+    """Convert Gradio image data to PIL if present."""
+    if image_value is None:
+        return None
+    if isinstance(image_value, Image.Image):
+        return image_value
+    return Image.fromarray(image_value)
+
+
+def _load_font_safe(size: int, bold: bool = False):
+    """Load a local font with robust fallbacks."""
+    candidates = [
+        "arialbd.ttf" if bold else "arial.ttf",
+        "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        "cour.ttf",
+        "C:/Windows/Fonts/cour.ttf",
+    ]
+    for item in candidates:
+        try:
+            return ImageFont.truetype(item, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def _format_pr_date(value: str) -> str:
+    """Convert YYMMDD-style values to PR display style, best effort."""
+    raw = (value or "").strip().replace("-", "")
+    if len(raw) == 6 and raw.isdigit():
+        yy = raw[0:2]
+        mm = int(raw[2:4])
+        dd = raw[4:6]
+        months = {
+            1: "JAN", 2: "FEB", 3: "MAR", 4: "APR", 5: "MAY", 6: "JUN",
+            7: "JUL", 8: "AUG", 9: "SEP", 10: "OCT", 11: "NOV", 12: "DEC",
+        }
+        mon = months.get(mm, "JAN")
+        return f"{dd} {mon} / {mon} {yy}"
+    return value
+
+
+def _render_pr_on_uploaded_template(fields: dict[str, str], photo: Image.Image, template_bg: Image.Image):
+    """Render PR content on top of a user-uploaded front template image."""
+    bg = template_bg.convert("RGB")
+
+    # Auto-crop dark tabletop/background so coordinates map to the card itself.
+    gray = bg.convert("L")
+    bbox = gray.point(lambda p: 255 if p > 22 else 0).getbbox()
+    if bbox:
+        bg = bg.crop(bbox)
+
+    card = bg.resize((1011, 637), Image.LANCZOS)
+    draw = ImageDraw.Draw(card)
+
+    # Clear variable zones to avoid stacking text/photo over already-filled sample cards.
+    draw.rectangle([(48, 88), (440, 600)], fill=(242, 242, 242))      # photo area
+    draw.rectangle([(485, 108), (958, 545)], fill=(242, 242, 242))     # text area
+
+    # Subtle noise blending to avoid harsh rectangular patches.
+    for y in range(90, 600, 6):
+        draw.line([(48, y), (958, y)], fill=(236, 236, 236), width=1)
+
+    # Photo zone aligned to sample front layout.
+    pw, ph = 380, 500
+    px, py = 58, 95
+    photo_rgb = photo.convert("RGB")
+    ratio_src = photo_rgb.width / max(1, photo_rgb.height)
+    ratio_dst = pw / ph
+    if ratio_src > ratio_dst:
+        new_w = int(photo_rgb.height * ratio_dst)
+        left = (photo_rgb.width - new_w) // 2
+        photo_rgb = photo_rgb.crop((left, 0, left + new_w, photo_rgb.height))
+    else:
+        new_h = int(photo_rgb.width / ratio_dst)
+        top = (photo_rgb.height - new_h) // 2
+        photo_rgb = photo_rgb.crop((0, top, photo_rgb.width, top + new_h))
+    photo_rgb = photo_rgb.resize((pw, ph), Image.LANCZOS)
+    card.paste(photo_rgb, (px, py))
+
+    title_font = _load_font_safe(28, bold=True)
+    value_font = _load_font_safe(50, bold=True)
+    normal_font = _load_font_safe(24, bold=True)
+
+    surname = (fields.get("surname") or "").upper()
+    given = (fields.get("given_names") or "").upper()
+    doc_no = (fields.get("pr_number") or fields.get("document_number") or "").upper()
+    sex = (fields.get("sex") or "").upper()
+    nationality = (fields.get("nationality") or "CAN").upper()
+    dob = _format_pr_date(fields.get("date_of_birth", ""))
+    expiry = _format_pr_date(fields.get("expiry_date", ""))
+
+    # Field positions tuned against provided sample fronts.
+    draw.text((500, 118), surname, font=title_font, fill="#111111")
+    draw.text((500, 164), given, font=title_font, fill="#222222")
+    draw.text((500, 232), doc_no, font=value_font, fill="#111111")
+    draw.text((500, 315), sex[:1], font=normal_font, fill="#111111")
+    draw.text((585, 315), nationality[:3], font=normal_font, fill="#111111")
+    draw.text((500, 415), dob, font=normal_font, fill="#111111")
+    draw.text((500, 485), expiry, font=normal_font, fill="#111111")
+
+    return card
+
+
+def _generate_document_preview(doc_kind: str, fields_json: str, photo_image, template_bg_image):
+    """Generate a template-driven PR card or passport preview."""
+    if not fields_json or not fields_json.strip():
+        return None, "Enter field JSON first.", ""
+
+    try:
+        fields = json.loads(fields_json)
+    except json.JSONDecodeError as exc:
+        return None, f"Invalid JSON: {exc}", ""
+
+    photo = _to_pil_image(photo_image)
+    if photo is None:
+        return None, "Upload a portrait image first.", ""
+
+    custom_bg = _to_pil_image(template_bg_image)
+
+    from canada_id.templates.generator import generate_passport, generate_pr_card
+
+    if doc_kind == "Passport":
+        generated = generate_passport(fields, photo=photo)
+        image_out = generated.image
+        stem = "passport"
+    else:
+        if custom_bg is not None:
+            image_out = _render_pr_on_uploaded_template(fields, photo, custom_bg)
+            generated = None
+        else:
+            generated = generate_pr_card(fields, photo=photo)
+            image_out = generated.image
+        stem = "pr_card"
+
+    output_dir = Path("output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    image_out.save(output_path)
+
+    lines = [
+        f"Generated {doc_kind} at {image_out.width}x{image_out.height}px.",
+        f"Saved to {output_path}",
+    ]
+    if generated and generated.mrz_string:
+        lines.append("")
+        lines.append("MRZ:")
+        lines.append(generated.mrz_string)
+    if generated and generated.warnings:
+        lines.append("")
+        lines.extend(f"Warning: {item}" for item in generated.warnings)
+    if custom_bg is not None and doc_kind != "Passport":
+        lines.append("")
+        lines.append("Used uploaded PR template background for real-time front rendering.")
+
+    return image_out, "\n".join(lines), str(output_path)
+
+
+def _clamp_enhance(value: float) -> float:
+    """Clamp enhancement values to a safe range."""
+    return max(0.5, min(2.0, value))
+
+
+def _apply_edit_plan(image: Image.Image, plan: EditPlan) -> Image.Image:
+    """Apply an enhancement plan using PIL."""
+    output = image.convert("RGB")
+    output = ImageEnhance.Brightness(output).enhance(_clamp_enhance(plan.brightness))
+    output = ImageEnhance.Contrast(output).enhance(_clamp_enhance(plan.contrast))
+    output = ImageEnhance.Color(output).enhance(_clamp_enhance(plan.color))
+    output = ImageEnhance.Sharpness(output).enhance(_clamp_enhance(plan.sharpness))
+    return output
+
+
+def _local_plan_from_prompt(prompt: str) -> EditPlan:
+    """Build a deterministic local enhancement plan from keywords."""
+    text = (prompt or "").lower()
+    brightness = 1.0
+    contrast = 1.0
+    color = 1.0
+    sharpness = 1.0
+
+    if "bright" in text or "light" in text:
+        brightness += 0.15
+    if "dark" in text:
+        brightness -= 0.15
+    if "contrast" in text or "crisp" in text:
+        contrast += 0.2
+    if "soft" in text:
+        sharpness -= 0.15
+    if "sharp" in text or "clear" in text:
+        sharpness += 0.2
+    if "vivid" in text or "saturat" in text or "color" in text:
+        color += 0.2
+    if "muted" in text or "desatur" in text:
+        color -= 0.2
+
+    return EditPlan(
+        brightness=_clamp_enhance(brightness),
+        contrast=_clamp_enhance(contrast),
+        color=_clamp_enhance(color),
+        sharpness=_clamp_enhance(sharpness),
+    )
+
+
+def _plan_from_openrouter(prompt: str, model: str) -> tuple[EditPlan | None, str]:
+    """Request enhancement parameters from OpenRouter."""
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        return None, "OPENROUTER_API_KEY missing; used local enhancement plan."
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an image-retouch planner. Return only JSON with keys "
+                    "brightness, contrast, color, sharpness as numbers in range 0.5..2.0."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Edit request: {prompt}",
+            },
+        ],
+        "temperature": 0.2,
+    }
+
+    req = request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=20) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        content = body["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        return (
+            EditPlan(
+                brightness=_clamp_enhance(float(parsed.get("brightness", 1.0))),
+                contrast=_clamp_enhance(float(parsed.get("contrast", 1.0))),
+                color=_clamp_enhance(float(parsed.get("color", 1.0))),
+                sharpness=_clamp_enhance(float(parsed.get("sharpness", 1.0))),
+            ),
+            f"Used OpenRouter model {model}.",
+        )
+    except (error.URLError, TimeoutError, KeyError, ValueError, json.JSONDecodeError):
+        return None, "OpenRouter plan unavailable; used local enhancement plan."
+
+
+def _enhance_document_image(
+    image_value,
+    edit_prompt: str,
+    provider: str,
+    model: str,
+):
+    """Enhance generated image with provider-assisted or local plan."""
+    image = _to_pil_image(image_value)
+    if image is None:
+        return None, "Generate or upload an image first.", ""
+
+    message = "Used local enhancement plan."
+    plan = None
+    if provider == "OpenRouter":
+        plan, message = _plan_from_openrouter(edit_prompt, model)
+
+    if plan is None:
+        plan = _local_plan_from_prompt(edit_prompt)
+
+    enhanced = _apply_edit_plan(image, plan)
+    output_dir = Path("output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"enhanced_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    enhanced.save(output_path)
+
+    plan_text = (
+        f"Plan => brightness={plan.brightness:.2f}, contrast={plan.contrast:.2f}, "
+        f"color={plan.color:.2f}, sharpness={plan.sharpness:.2f}"
+    )
+    return enhanced, f"{message}\n{plan_text}\nSaved to {output_path}", str(output_path)
+
+
 def create_app() -> gr.Blocks:
     """Create the Gradio application."""
     choices = _province_choices()
 
-    with gr.Blocks(title="Canada ID - AAMVA Barcode Tool") as app:
-        gr.Markdown("# Canada ID - AAMVA PDF417 Barcode Tool")
+    with gr.Blocks(title="moviepropIDgen") as app:
+        gr.Markdown("# moviepropIDgen")
         gr.Markdown(
             "Encode and decode AAMVA-standard PDF417 barcodes"
             " for all Canadian provinces and territories."
@@ -729,115 +1427,6 @@ def create_app() -> gr.Blocks:
                 outputs=[encode_province, encode_status],
             )
 
-        with gr.Tab("History"):
-            gr.Markdown("## Operation History")
-            gr.Markdown("All encodes, decodes, and validations are saved.")
-            with gr.Row():
-                history_op = gr.Dropdown(
-                    choices=["all", "encode", "decode", "validate"],
-                    value="all",
-                    label="Filter by type",
-                )
-                history_province = gr.Textbox(
-                    label="Filter by province (e.g. ON, QC)",
-                    placeholder="Leave blank for all",
-                )
-                history_btn = gr.Button("Refresh", variant="primary")
-            history_table = gr.Dataframe(
-                headers=[
-                    "ID", "Timestamp", "Type",
-                    "Province", "Summary", "Errors?",
-                ],
-                label="Recent Operations",
-            )
-            history_btn.click(
-                _get_history_table,
-                inputs=[history_op, history_province],
-                outputs=[history_table],
-            )
-
-        with gr.Tab("Code 39"):
-            gr.Markdown(
-                "## Code 39 Barcode Generator"
-            )
-            gr.Markdown(
-                "Encode text as a Code 39 (1D) barcode."
-                " Supports A-Z, 0-9, and -.$/+% characters."
-            )
-            with gr.Row():
-                with gr.Column():
-                    c39_text = gr.Textbox(
-                        label="Text to encode",
-                        placeholder="e.g. HELLO123",
-                        value="HELLO123",
-                    )
-                    c39_btn = gr.Button(
-                        "Generate Code 39", variant="primary",
-                    )
-                with gr.Column():
-                    c39_output = gr.Image(label="Code 39 Barcode")
-                    c39_status = gr.Textbox(
-                        label="Status", lines=1,
-                    )
-            c39_btn.click(
-                _generate_code39,
-                inputs=[c39_text],
-                outputs=[c39_output, c39_status],
-            )
-
-        with gr.Tab("Compositor"):
-            gr.Markdown(
-                "## Card Compositor"
-            )
-            gr.Markdown(
-                "Overlay a barcode onto a card template."
-                " Position and size are set as fractions"
-                " of the card dimensions (0.0 to 1.0)."
-            )
-            with gr.Row():
-                with gr.Column():
-                    comp_card = gr.Image(
-                        label="Card Template (upload image)",
-                    )
-                    comp_barcode = gr.Image(
-                        label="Barcode Image (upload image)",
-                    )
-                with gr.Column():
-                    with gr.Row():
-                        comp_x = gr.Number(
-                            label="X position", value=0.02,
-                            minimum=0.0, maximum=1.0,
-                        )
-                        comp_y = gr.Number(
-                            label="Y position", value=0.05,
-                            minimum=0.0, maximum=1.0,
-                        )
-                    with gr.Row():
-                        comp_w = gr.Number(
-                            label="Width", value=0.37,
-                            minimum=0.01, maximum=1.0,
-                        )
-                        comp_h = gr.Number(
-                            label="Height", value=0.90,
-                            minimum=0.01, maximum=1.0,
-                        )
-                    comp_rot = gr.Number(
-                        label="Rotation (degrees)", value=-90.0,
-                    )
-                    comp_btn = gr.Button(
-                        "Composite", variant="primary",
-                    )
-            comp_result = gr.Image(label="Result")
-            comp_status = gr.Textbox(label="Status", lines=1)
-            comp_btn.click(
-                _composite_card,
-                inputs=[
-                    comp_card, comp_barcode,
-                    comp_x, comp_y, comp_w, comp_h, comp_rot,
-                ],
-                outputs=[comp_result, comp_status],
-            )
-
         with gr.Tab("MRZ"):
             gr.Markdown("## Canadian MRZ - Passport & PR Card")
             gr.Markdown(
@@ -864,13 +1453,79 @@ def create_app() -> gr.Blocks:
                     variant="secondary",
                 )
 
+            # Educational info: card era / chip type / doc# format
+            mrz_doc_info = gr.Markdown(
+                "Select a template to see card era, chip type, and"
+                " document number format details."
+            )
+            mrz_doc_selector.change(
+                _show_doc_info,
+                inputs=[mrz_doc_selector],
+                outputs=[mrz_doc_info],
+            )
+
+            # ── Era toggle: passport (legacy/current) + PR (3 eras) ──
+            with gr.Row():
+                mrz_passport_era = gr.Radio(
+                    choices=[
+                        "Pre-May 2023 (legacy: AB123456)",
+                        "Post-May 2023 (current: A123456BC)",
+                    ],
+                    value="Post-May 2023 (current: A123456BC)",
+                    label="Passport Era (TD3 only)",
+                    info="Affects expected document number format",
+                )
+                mrz_pr_era = gr.Radio(
+                    choices=[
+                        "2002-2009 (PDF417 + magstripe)",
+                        "2009-2014 (PDF417 + optical stripe)",
+                        "2015-present (RFID, no PDF417)",
+                    ],
+                    value="2015-present (RFID, no PDF417)",
+                    label="PR Card Era (TD1 only)",
+                    info="Affects security features (informational)",
+                )
+
+            # ── JSON paste — same UX as Encode tab ──
+            gr.Markdown("**Paste JSON to auto-fill fields:**")
+            with gr.Row():
+                mrz_json_input = gr.Textbox(
+                    label="JSON payload",
+                    lines=10,
+                    placeholder=(
+                        "{\n"
+                        '  "Document Type": "P",\n'
+                        '  "MRZ Format": "TD3",\n'
+                        '  "Issuing Country": "CAN",\n'
+                        '  "Document Number": "AB123456",\n'
+                        '  "Surname": "RAHMAN",\n'
+                        '  "Given Names": "BADR",\n'
+                        '  "Nationality": "CAN",\n'
+                        '  "Sex": "M",\n'
+                        '  "Date of Birth": "970614",\n'
+                        '  "Expiry Date": "280701",\n'
+                        '  "Optional Data 1": "",\n'
+                        '  "Issuing Authority": "GATINEAU"\n'
+                        "}"
+                    ),
+                )
+                mrz_json_load_btn = gr.Button(
+                    "Load from JSON",
+                    variant="secondary",
+                )
+
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("**Document Info**")
                     mrz_doc_type = gr.Dropdown(
-                        choices=["I", "P"], value="I",
-                        label="Document Type"
-                        " (P=Passport, I=ID/PR Card)",
+                        choices=["P", "CA", "I", "AC", "C"],
+                        value="CA",
+                        label="Document Type",
+                        info=(
+                            "P=Passport (TD3) | CA=Canadian PR Card"
+                            " (TD1) | I=Generic ID | AC=Crew member"
+                        ),
+                        allow_custom_value=True,
                     )
                     mrz_format = gr.Dropdown(
                         choices=["TD1", "TD2", "TD3"],
@@ -956,6 +1611,11 @@ def create_app() -> gr.Blocks:
                 _load_doc_template,
                 inputs=[mrz_doc_selector],
                 outputs=_gen_fields,
+            )
+            mrz_json_load_btn.click(
+                _mrz_load_from_json,
+                inputs=[mrz_json_input],
+                outputs=_gen_fields + [mrz_gen_status],
             )
             mrz_gen_btn.click(
                 _mrz_generate,
@@ -1083,22 +1743,310 @@ def create_app() -> gr.Blocks:
                 outputs=[mrz_compare_result],
             )
 
-        with gr.Tab("Provinces"):
-            gr.Markdown("## Canadian Province & Territory Profiles")
-            rows = []
-            for p in all_profiles():
-                classes = ", ".join(p.vehicle_classes.keys())
-                rows.append([
-                    p.code, p.name, p.iin,
-                    f"v{p.aamva_version}", classes,
-                ])
-            gr.Dataframe(
-                value=rows,
-                headers=[
-                    "Code", "Name", "IIN",
-                    "AAMVA Version", "Vehicle Classes",
-                ],
+            # ── Section 4: Export ──
+            gr.Markdown("---")
+            gr.Markdown("### 4. Export Results")
+            with gr.Row():
+                mrz_export_txt_btn = gr.Button("Export TXT")
+                mrz_export_json_btn = gr.Button("Export JSON")
+            mrz_export_output = gr.Textbox(
+                label="Export Output (copy or save)", lines=10,
             )
+            mrz_export_txt_btn.click(
+                _mrz_export_txt,
+                inputs=[
+                    mrz_gen_output, mrz_scan_parsed,
+                    mrz_gen_status,
+                ],
+                outputs=[mrz_export_output],
+            )
+            mrz_export_json_btn.click(
+                _mrz_export_json,
+                inputs=[
+                    mrz_gen_output, mrz_scan_parsed,
+                    mrz_gen_status,
+                ],
+                outputs=[mrz_export_output],
+            )
+
+
+        with gr.Tab("More Tools"):
+            gr.Markdown(
+                "Additional tools (under active development). "
+                "Click any tab below to expand."
+            )
+            with gr.Tabs():
+                with gr.Tab("Documents"):
+                    gr.Markdown("## Local Document Studio")
+                    gr.Markdown(
+                        "Generate template-driven Canadian documents locally. "
+                        "PR card presets can be saved and reused with new photos or updated info."
+                    )
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            doc_kind = gr.Dropdown(
+                                choices=["Permanent Resident Card", "Passport"],
+                                value="Permanent Resident Card",
+                                label="Document Type",
+                            )
+                            pr_sample_name = gr.Textbox(
+                                label="PR Sample Name",
+                                placeholder="e.g. default_pr_layout",
+                            )
+                            pr_sample_list = gr.Dropdown(
+                                choices=_pr_sample_choices(),
+                                label="Saved PR Samples",
+                            )
+                            with gr.Row():
+                                doc_load_defaults = gr.Button("Load Default Fields")
+                                pr_load_btn = gr.Button("Load PR Sample")
+                                pr_save_btn = gr.Button("Save PR Sample")
+                            doc_photo = gr.Image(label="Portrait Photo")
+                            doc_template_bg = gr.Image(
+                                label="Optional PR Front Template Background",
+                            )
+                            doc_fields = gr.Textbox(
+                                label="Document Fields (JSON)",
+                                lines=18,
+                                value=_default_pr_fields(),
+                            )
+                            doc_generate_btn = gr.Button(
+                                "Generate Document",
+                                variant="primary",
+                            )
+                            doc_edit_prompt = gr.Textbox(
+                                label="Edit Prompt",
+                                lines=2,
+                                placeholder="e.g. make it sharper, slightly brighter, and improve contrast",
+                            )
+                            with gr.Row():
+                                doc_edit_provider = gr.Dropdown(
+                                    choices=["Local", "OpenRouter"],
+                                    value="Local",
+                                    label="Edit Provider",
+                                )
+                                doc_edit_model = gr.Textbox(
+                                    label="Provider Model",
+                                    value="openai/gpt-4o-mini",
+                                )
+                            doc_enhance_btn = gr.Button("Enhance Image")
+                        with gr.Column(scale=1):
+                            doc_output = gr.Image(label="Generated Document")
+                            doc_status = gr.Textbox(label="Status", lines=12)
+                            doc_saved_path = gr.Textbox(label="Saved File", lines=1)
+                    doc_load_defaults.click(
+                        _document_defaults,
+                        inputs=[doc_kind],
+                        outputs=[doc_fields],
+                    )
+                    doc_kind.change(
+                        _document_defaults,
+                        inputs=[doc_kind],
+                        outputs=[doc_fields],
+                    )
+                    pr_load_btn.click(
+                        _load_pr_sample,
+                        inputs=[pr_sample_list],
+                        outputs=[doc_fields, doc_status],
+                    )
+                    pr_save_btn.click(
+                        _save_pr_sample,
+                        inputs=[pr_sample_name, doc_fields],
+                        outputs=[pr_sample_list, doc_status],
+                    )
+                    doc_generate_btn.click(
+                        _generate_document_preview,
+                        inputs=[doc_kind, doc_fields, doc_photo, doc_template_bg],
+                        outputs=[doc_output, doc_status, doc_saved_path],
+                    )
+                    doc_enhance_btn.click(
+                        _enhance_document_image,
+                        inputs=[doc_output, doc_edit_prompt, doc_edit_provider, doc_edit_model],
+                        outputs=[doc_output, doc_status, doc_saved_path],
+                    )
+
+                with gr.Tab("AI Generator"):
+                    gr.Markdown("## Synthetic Identity Engine")
+                    gr.Markdown(
+                        "Generate highly realistic, mathematically valid synthetic Canadian identities using AI. "
+                        "Output matches the exact AAMVA or MRZ JSON formats required for generation."
+                    )
+                    with gr.Row():
+                        with gr.Column():
+                            ai_gen_type = gr.Dropdown(
+                                choices=["ON - Ontario", "QC - Quebec", "PR Card", "Passport"],
+                                value="ON - Ontario",
+                                label="Identity Type",
+                            )
+                            ai_gen_age = gr.Textbox(
+                                label="Age Range",
+                                value="25-35",
+                                placeholder="e.g. 25-35, 40-50, exactly 21",
+                            )
+                            ai_gen_sex = gr.Dropdown(
+                                choices=["Random", "M", "F", "X"],
+                                value="Random",
+                                label="Sex",
+                            )
+                            ai_gen_btn = gr.Button("Generate Synthetic Identity", variant="primary")
+                        with gr.Column():
+                            ai_gen_output = gr.Textbox(
+                                label="Generated Identity (JSON)",
+                                lines=15,
+                            )
+            
+                    def _generate_synthetic_identity_ui(doc_type: str, age: str, sex: str) -> str:
+                        from canada_id.ai_agents.synthetic_data import generate_synthetic_identity
+                        result = generate_synthetic_identity(doc_type, age, sex)
+                        return json.dumps(result, indent=2)
+            
+                    ai_gen_btn.click(
+                        _generate_synthetic_identity_ui,
+                        inputs=[ai_gen_type, ai_gen_age, ai_gen_sex],
+                        outputs=[ai_gen_output],
+                    )
+
+                with gr.Tab("AI Config"):
+                    gr.Markdown("## Local Provider Configuration")
+                    gr.Markdown(
+                        "Provider keys are read from environment variables or a local .env file. "
+                        "This app does not store or display full secrets."
+                    )
+                    provider_status = gr.Markdown(value=_document_provider_status())
+                    provider_refresh = gr.Button("Refresh Provider Status", variant="primary")
+                    provider_refresh.click(
+                        _document_provider_status,
+                        outputs=[provider_status],
+                    )
+
+                with gr.Tab("History"):
+                    gr.Markdown("## Operation History")
+                    gr.Markdown("All encodes, decodes, and validations are saved.")
+                    with gr.Row():
+                        history_op = gr.Dropdown(
+                            choices=["all", "encode", "decode", "validate"],
+                            value="all",
+                            label="Filter by type",
+                        )
+                        history_province = gr.Textbox(
+                            label="Filter by province (e.g. ON, QC)",
+                            placeholder="Leave blank for all",
+                        )
+                        history_btn = gr.Button("Refresh", variant="primary")
+                    history_table = gr.Dataframe(
+                        headers=[
+                            "ID", "Timestamp", "Type",
+                            "Province", "Summary", "Errors?",
+                        ],
+                        label="Recent Operations",
+                    )
+                    history_btn.click(
+                        _get_history_table,
+                        inputs=[history_op, history_province],
+                        outputs=[history_table],
+                    )
+
+                with gr.Tab("Code 39"):
+                    gr.Markdown(
+                        "## Code 39 Barcode Generator"
+                    )
+                    gr.Markdown(
+                        "Encode text as a Code 39 (1D) barcode."
+                        " Supports A-Z, 0-9, and -.$/+% characters."
+                    )
+                    with gr.Row():
+                        with gr.Column():
+                            c39_text = gr.Textbox(
+                                label="Text to encode",
+                                placeholder="e.g. HELLO123",
+                                value="HELLO123",
+                            )
+                            c39_btn = gr.Button(
+                                "Generate Code 39", variant="primary",
+                            )
+                        with gr.Column():
+                            c39_output = gr.Image(label="Code 39 Barcode")
+                            c39_status = gr.Textbox(
+                                label="Status", lines=1,
+                            )
+                    c39_btn.click(
+                        _generate_code39,
+                        inputs=[c39_text],
+                        outputs=[c39_output, c39_status],
+                    )
+
+                with gr.Tab("Compositor"):
+                    gr.Markdown(
+                        "## Card Compositor"
+                    )
+                    gr.Markdown(
+                        "Overlay a barcode onto a card template."
+                        " Position and size are set as fractions"
+                        " of the card dimensions (0.0 to 1.0)."
+                    )
+                    with gr.Row():
+                        with gr.Column():
+                            comp_card = gr.Image(
+                                label="Card Template (upload image)",
+                            )
+                            comp_barcode = gr.Image(
+                                label="Barcode Image (upload image)",
+                            )
+                        with gr.Column():
+                            with gr.Row():
+                                comp_x = gr.Number(
+                                    label="X position", value=0.02,
+                                    minimum=0.0, maximum=1.0,
+                                )
+                                comp_y = gr.Number(
+                                    label="Y position", value=0.05,
+                                    minimum=0.0, maximum=1.0,
+                                )
+                            with gr.Row():
+                                comp_w = gr.Number(
+                                    label="Width", value=0.37,
+                                    minimum=0.01, maximum=1.0,
+                                )
+                                comp_h = gr.Number(
+                                    label="Height", value=0.90,
+                                    minimum=0.01, maximum=1.0,
+                                )
+                            comp_rot = gr.Number(
+                                label="Rotation (degrees)", value=-90.0,
+                            )
+                            comp_btn = gr.Button(
+                                "Composite", variant="primary",
+                            )
+                    comp_result = gr.Image(label="Result")
+                    comp_status = gr.Textbox(label="Status", lines=1)
+                    comp_btn.click(
+                        _composite_card,
+                        inputs=[
+                            comp_card, comp_barcode,
+                            comp_x, comp_y, comp_w, comp_h, comp_rot,
+                        ],
+                        outputs=[comp_result, comp_status],
+                    )
+
+                with gr.Tab("MRZ Guide"):
+                    gr.HTML(get_mrz_guide_html())
+
+                with gr.Tab("Provinces"):
+                    gr.Markdown("## Canadian Province & Territory Profiles")
+                    rows = []
+                    for p in all_profiles():
+                        classes = ", ".join(p.vehicle_classes.keys())
+                        rows.append([
+                            p.code, p.name, p.iin,
+                            f"v{p.aamva_version}", classes,
+                        ])
+                    gr.Dataframe(
+                        value=rows,
+                        headers=[
+                            "Code", "Name", "IIN",
+                            "AAMVA Version", "Vehicle Classes",
+                        ],
+                    )
 
         # Stats footer
         stats = _db.get_stats()

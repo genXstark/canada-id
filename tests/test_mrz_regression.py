@@ -450,8 +450,14 @@ class TestWebUIHelpers:
 
     def test_barcode_size_default(self):
         from canada_id.web import _barcode_size
-        assert _barcode_size("BC") == (404, 82)
-        assert _barcode_size("AB") == (404, 82)
+        # AAMVA-default territories
+        assert _barcode_size("PE") == (404, 82)
+        assert _barcode_size("YT") == (404, 82)
+        # Provinces with custom sizes
+        assert _barcode_size("BC") == (640, 130)
+        assert _barcode_size("AB") == (565, 110)
+        # Unknown code falls back to default
+        assert _barcode_size("ZZ") == (404, 82)
 
     def test_doc_type_choices(self):
         from canada_id.web import _doc_type_choices
@@ -468,7 +474,8 @@ class TestWebUIHelpers:
     def test_load_doc_template_pr_card(self):
         from canada_id.web import _load_doc_template
         result = _load_doc_template("pr_card - Permanent Resident Card")
-        assert result[0] == "I"       # doc_type
+        # Real Canadian PR cards use 'CA' as doc type, not 'I<'
+        assert result[0] == "CA"      # doc_type per real PR card
         assert result[1] == "TD1"     # format
         assert result[6] == "CMR"     # nationality (not CAN)
 

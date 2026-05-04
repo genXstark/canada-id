@@ -15,8 +15,6 @@ def test_codewords(codewords: list, error_correction_length: int) -> tuple:
     # test for errors
     # if the syndrom array is all zeros, there is no error
     for i in range(error_correction_length, 0, -1):
-        # TODO: This may have been translated incorrectly! Confirm it's not broken.
-        # Original Code: if((Syndrome[ErrorCorrectionLength - Index] = PolyCodewords.EvaluateAt(Modulus.ExpTable[Index])) != 0) Error = true;
         mod_exp_table_result = Modulus.exp_table[i]
         evaluate_result = poly_codewords.evaluate_at(mod_exp_table_result)
         syndrome_index = error_correction_length - i
